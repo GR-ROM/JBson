@@ -3,7 +3,10 @@ package su.grinev.bson;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
 
 public class BsonWriter {
     private final LinkedList<WriterContext> stack = new LinkedList<>();

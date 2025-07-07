@@ -3,7 +3,6 @@ package su.grinev.bson;
 import jdk.incubator.vector.ByteVector;
 import jdk.incubator.vector.VectorMask;
 import jdk.incubator.vector.VectorSpecies;
-import su.grinev.Binder;
 
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
@@ -11,7 +10,10 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.Map;
 
 import static jdk.incubator.vector.ByteVector.SPECIES_PREFERRED;
 

@@ -2,8 +2,6 @@ package su.grinev;
 
 import su.grinev.bson.BsonReader;
 import su.grinev.bson.BsonWriter;
-import su.grinev.test.VpnPacket;
-import su.grinev.test.VpnRequest;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;

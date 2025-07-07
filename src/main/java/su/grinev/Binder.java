@@ -1,7 +1,5 @@
 package su.grinev;
 
-import su.grinev.bson.BsonReader;
-
 public interface Binder {
 
     void bind(KeyTypeValue keyTypeValue);

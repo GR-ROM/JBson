@@ -1,11 +1,11 @@
 package su.grinev.bson;
 
-import su.grinev.Binder;
-import su.grinev.PojoBinderImpl;
-
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.util.*;
+import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
 
 public class BsonReader {
 
