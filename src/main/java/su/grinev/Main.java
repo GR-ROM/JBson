@@ -2,14 +2,16 @@ package su.grinev;
 
 import su.grinev.bson.BsonReader;
 import su.grinev.bson.BsonWriter;
+import su.grinev.test.VpnPacket;
+import su.grinev.test.VpnRequest;
 
 import java.io.IOException;
-import java.nio.Buffer;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
@@ -112,24 +114,23 @@ public class Main {
                 0x00 // end of root document
         };
 
-
-
         Map m = Map.of(
-                "0000", "1111",
-                "Key1", "Value1",
-                "Nested", Map.of("Key", "Value"),
-                "Nested2", Map.of("Key1", "Value", "key2", "value", "key3", "value"),
-                "Key2", "Value2",
-                "Key3", "Value3"
+                "ver", "0.1",
+                "size", 12,
+                "type", "VpnPacket",
+                "data", Map.of(
+                        "encoding", "RAW",
+                        "packet", new byte[] { 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x7F, 0x7F, 0x7F, 0x7F }
+                )
         );
 
         BsonWriter bsonWriter = new BsonWriter();
+        BsonReader bsonReader = new BsonReader();
 
         ByteBuffer b = bsonWriter.serialize(m);
 
-        BsonReader bsonReader = new BsonReader();
-
-        System.out.println(bsonReader.parseObject(b));
+        System.out.println(Arrays.toString(b.array()));
+        System.out.println(bsonReader.deserialize(b));
 
         List<Long> resultParser = new ArrayList<>();
         ByteBuffer buffer = loadBsonFile("C:\\Users\\rgrin\\large_test_multiple.bson");
@@ -137,7 +138,7 @@ public class Main {
         for (int i = 0; i < 10000; i++) {
                     long delta = System.nanoTime();
                     buffer.rewind();
-                    deserialized = bsonReader.parseObject(buffer);
+                    //deserialized = bsonReader.deserialize(buffer);
                     delta = System.nanoTime() - delta;
                    resultParser.add(delta);
         }

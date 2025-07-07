@@ -8,7 +8,7 @@ import java.util.*;
 public class BsonWriter {
     private final LinkedList<WriterContext> stack = new LinkedList<>();
     private final Node lengthTreeRootNode = new Node(null);
-    private ByteBuffer buffer = ByteBuffer.allocateDirect(1024 * 1024);
+    private ByteBuffer buffer = ByteBuffer.wrap(new byte[1024]);
     private boolean needTraverseObject;
 
     public ByteBuffer serialize(Map<String, Object> document) {
@@ -108,6 +108,13 @@ public class BsonWriter {
             ensureCapacity(1 + keyBytes.length + 1);
             buffer.put((byte) 0x0A); // null
             buffer.put(keyBytes).put((byte) 0x00);
+        } else if (value instanceof byte[] bytes) {  // binary data
+            ensureCapacity(1 + keyBytes.length + 1 + 4 + 1 + bytes.length);
+            buffer.put((byte) 0x05)                 // type
+                    .put(keyBytes).put((byte) 0x00) // cstring
+                    .putInt(bytes.length)           // block length
+                    .put((byte) 0x00)               // generic subtype
+                    .put(bytes);                    // data
         } else if (value instanceof Map<?, ?> m) {
             ensureCapacity(1 + keyBytes.length + 1);
             buffer.put((byte) 0x03); // embedded document

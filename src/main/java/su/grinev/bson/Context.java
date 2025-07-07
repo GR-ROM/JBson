@@ -2,11 +2,11 @@ package su.grinev.bson;
 
 public class Context {
     private int pos;
+    private String key;
     private Object value;
 
-    public Context(int pos, Object value) {
+    public Context(int pos) {
         this.pos = pos;
-        this.value = value;
     }
 
     public int getPos() {
@@ -25,5 +25,14 @@ public class Context {
     public Context setValue(Object value) {
         this.value = value;
         return this;
+    }
+
+    public Context setKey(String key) {
+        this.key = key;
+        return this;
+    }
+
+    public String getKey() {
+        return key;
     }
 }

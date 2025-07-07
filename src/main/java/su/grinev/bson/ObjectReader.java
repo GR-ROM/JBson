@@ -3,6 +3,7 @@ package su.grinev.bson;
 import jdk.incubator.vector.ByteVector;
 import jdk.incubator.vector.VectorMask;
 import jdk.incubator.vector.VectorSpecies;
+import su.grinev.Binder;
 
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
@@ -14,7 +15,7 @@ import java.util.*;
 
 import static jdk.incubator.vector.ByteVector.SPECIES_PREFERRED;
 
-public class ObjectReader {
+public final class ObjectReader {
     private byte[] buf = new byte[10000];
     private static final byte[] temp = new byte[SPECIES_PREFERRED.length()];
     private static final VectorSpecies<Byte> SPECIES = SPECIES_PREFERRED;
@@ -24,26 +25,37 @@ public class ObjectReader {
         contextPool = pool;
     }
 
-    public Map.Entry<String, Object> readObject(ByteBuffer buffer, LinkedList<Context> stack, int type) {
-        String key = readString(buffer, true);
+    public Map.Entry<String, Object> readElement(ByteBuffer buffer, LinkedList<Context> stack) {
         Object value;
+
+        int type = buffer.get();
+        if (type == 0) {
+            return null;
+        }
+
+        String key = readCStringSIMD(buffer);
 
         switch (type) {
             case 0x01 -> value = buffer.getDouble();         // Double
             case 0x02 -> value = readString(buffer, false);         // UTF-8 String
             case 0x03 -> {                                   // Embedded document
-                value = new HashMap<>();
                 int length = buffer.getInt();
+                value = new HashMap<>();
                 buffer.position(buffer.position() - 4);
-                Context context = contextPool.get().setPos(buffer.position()).setValue(value);
+                Context context = contextPool.get()
+                        .setPos(buffer.position())
+                        .setKey(key)
+                        .setValue(value);
                 stack.add(context);
                 buffer.position(buffer.position() + length);
             }
-            case 0x04 -> {                                   // Array
-                value = new ArrayList<>();
+            case 0x04 -> {
                 int length = buffer.getInt();
+                value = new ArrayList<>();
                 buffer.position(buffer.position() - 4);
-                Context context = contextPool.get().setPos(buffer.position()).setValue(value);
+                Context context = contextPool.get()
+                        .setPos(buffer.position())
+                        .setValue(value);
                 stack.add(context);
                 buffer.position(buffer.position() + length);
             }
@@ -104,16 +116,18 @@ public class ObjectReader {
             i += SPECIES.length();
         }
 
+        while (i < limit && buffer.get() != 0) {
+            i++;
+        }
+
         return i;
     }
 
     public String readCStringSIMD(ByteBuffer buffer) {
         int start = buffer.position();
-      //  int nullPos = findNullByteSIMD(buffer);
-        int c = 0;
-        while (buffer.get() != 0x00) { c++; }
+        int nullPos = findNullByteSIMD(buffer);
 
-        int len = c - start;
+        int len = nullPos - start;
         if (buf.length < len) {
             throw new IllegalArgumentException("Temp buffer too small");
         }
