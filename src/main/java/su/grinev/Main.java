@@ -10,10 +10,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 public class Main {
 
@@ -68,6 +65,15 @@ public class Main {
         BsonWriter bsonWriter = new BsonWriter();
         BsonReader bsonReader = new BsonReader();
 
+        byte[] packet = new byte[128 * 1024];
+
+        List<String> test = new ArrayList<>();
+        Random random = new Random();
+
+        for (int i = 0; i < 1000; i++) {
+            test.add(Integer.toString(random.nextInt()));
+        }
+
         VpnRequest<VpnPacket> request = VpnRequest.<VpnPacket>builder()
                 .ver("0.1")
                 .type(VpnPacket.class.getTypeName())
@@ -75,20 +81,40 @@ public class Main {
                         "srcCountry", "kz",
                         "dstCounty", "ru"
                         ))
+                .reserved(test)
                 .data(VpnPacket.builder()
                         .encoding("RAW")
-                        .packet(new byte[] { 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x7F, 0x7F, 0x7F, 0x7F })
+                        .packet(packet)
                         .build())
                 .build();
 
-        Map<String, Object> documentMap = binder.unbind(request);
-        ByteBuffer b = bsonWriter.serialize(documentMap);
+        VpnRequest<VpnPacket> request1 = null;
+        ByteBuffer b = null;
+        List<Long> serializationTime = new ArrayList<>();
+        List<Long> deserializationTime = new ArrayList<>();
+        for (int i = 0; i < 10000; i++) {
 
+            long delta = System.nanoTime();
+
+            Map<String, Object> documentMap = binder.unbind(request);
+            b = bsonWriter.serialize(documentMap);
+
+            serializationTime.add((System.nanoTime() - delta) / 1000);
+
+            delta = System.nanoTime();
+
+            Map<String, Object> deserialized = bsonReader.deserialize(b);
+            request1 = binder.bind(VpnRequest.class, deserialized);
+
+            deserializationTime.add((System.nanoTime() - delta) / 1000);
+        }
         System.out.println(Arrays.toString(b.array()));
-
-        Map<String, Object> deserialized = bsonReader.deserialize(b);
-        VpnRequest<VpnPacket> request1 = binder.bind(VpnRequest.class, deserialized);
-
         System.out.println(request1);
+
+        List<Long> sortedSerialization = serializationTime.stream().sorted().toList();
+        List<Long> sortedDeserialization = deserializationTime.stream().sorted().toList();
+
+        System.out.println("Serialization median time: %sus".formatted(Long.toString(sortedSerialization.get(sortedSerialization.size() / 2))));
+        System.out.println("Deserialization median time: %sus".formatted(Long.toString(sortedDeserialization.get(sortedDeserialization.size() / 2))));
     }
 }

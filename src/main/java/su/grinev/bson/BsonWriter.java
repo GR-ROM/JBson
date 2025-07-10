@@ -11,16 +11,22 @@ import java.util.Map;
 public class BsonWriter {
     private final LinkedList<WriterContext> stack = new LinkedList<>();
     private final Node lengthTreeRootNode = new Node(null);
-    private ByteBuffer buffer = ByteBuffer.allocateDirect(128 * 1024);
+    private ByteBuffer buffer = ByteBuffer.wrap(new byte[2 * 1024 * 1024]);
     private boolean needTraverseObject;
 
     public ByteBuffer serialize(Map<String, Object> document) {
         buffer.order(ByteOrder.LITTLE_ENDIAN);
+        buffer.rewind();
         stack.addLast(new WriterContext(0, document, lengthTreeRootNode, 0));
 
         while (!stack.isEmpty()) {
             WriterContext context = stack.getLast();
-            writeDocument(context.object, context.node, context);
+
+            if (context.object instanceof Map m) {
+                writeDocument((Map<String, Object>) m, context.node, context);
+            } else if (context.object instanceof List l) {
+                writeDocument((List<Object>) l, context.node, context);
+            }
         }
 
         writeLengths(lengthTreeRootNode);
@@ -36,7 +42,6 @@ public class BsonWriter {
         }
 
         List<Map.Entry<String, Object>> entries = document.entrySet().stream()
-                .sorted(Map.Entry.comparingByKey())
                 .toList();
 
         needTraverseObject = false;
@@ -48,17 +53,46 @@ public class BsonWriter {
             }
         }
 
+        updateParentLengths(ctx);
+        appendTerminator(node, ctx);
+
+        stack.removeLast();
+    }
+
+    private void writeDocument(List<Object> document, Node node, WriterContext ctx) {
+        if (ctx.idx == 0) {
+            ensureCapacity(4);
+            node.lengthPos = buffer.position();
+            buffer.position(buffer.position() + 4); // reserve space for length
+        }
+        needTraverseObject = false;
+
+        for (; ctx.idx < document.size(); ctx.idx++) {
+            ctx.len += writeElement(Integer.toString(ctx.idx), document.get(ctx.idx), node);
+            if (needTraverseObject) {
+                return;
+            }
+        }
+
+        updateParentLengths(ctx);
+        appendTerminator(node, ctx);
+
+        stack.removeLast();
+    }
+
+    private void appendTerminator(Node node, WriterContext ctx) {
+        ensureCapacity(1);
+        buffer.put((byte) 0x00);
+        ctx.len += 1;
+        node.length = ctx.len;
+    }
+
+    private static void updateParentLengths(WriterContext ctx) {
         Node current = ctx.node.parent;
         while (current != null) {
             current.length += ctx.node.length;
             current = current.parent;
         }
-
-        stack.removeLast();
-        ensureCapacity(1);
-        buffer.put((byte) 0x00); // document terminator
-        ctx.len += 1;
-        node.length = ctx.len;
     }
 
     @SuppressWarnings("unchecked")
@@ -70,33 +104,33 @@ public class BsonWriter {
             byte[] strBytes = s.getBytes(StandardCharsets.UTF_8);
             ensureCapacity(1 + keyBytes.length + 1 + 4 + strBytes.length + 1);
             buffer.put((byte) 0x02); // string
-            buffer.put(keyBytes).put((byte) 0x00);
+            appendCString(keyBytes);
             buffer.putInt(strBytes.length + 1);
-            buffer.put(strBytes).put((byte) 0x00);
+            appendCString(strBytes);
         } else if (value instanceof Integer i) {
             ensureCapacity(1 + keyBytes.length + 1 + 4);
             buffer.put((byte) 0x10); // int32
-            buffer.put(keyBytes).put((byte) 0x00);
+            appendCString(keyBytes);
             buffer.putInt(i);
         } else if (value instanceof Long l) {
             ensureCapacity(1 + keyBytes.length + 1 + 8);
             buffer.put((byte) 0x12); // int64
-            buffer.put(keyBytes).put((byte) 0x00);
+            appendCString(keyBytes);
             buffer.putLong(l);
         } else if (value instanceof Double d) {
             ensureCapacity(1 + keyBytes.length + 1 + 8);
             buffer.put((byte) 0x01); // double
-            buffer.put(keyBytes).put((byte) 0x00);
+            appendCString(keyBytes);
             buffer.putDouble(d);
         } else if (value instanceof Boolean b) {
             ensureCapacity(1 + keyBytes.length + 1 + 1);
             buffer.put((byte) 0x08); // boolean
-            buffer.put(keyBytes).put((byte) 0x00);
+            appendCString(keyBytes);
             buffer.put((byte) (b ? 1 : 0));
         } else if (value == null) {
             ensureCapacity(1 + keyBytes.length + 1);
             buffer.put((byte) 0x0A); // null
-            buffer.put(keyBytes).put((byte) 0x00);
+            appendCString(keyBytes);
         } else if (value instanceof byte[] bytes) {  // binary data
             ensureCapacity(1 + keyBytes.length + 1 + 4 + 1 + bytes.length);
             buffer.put((byte) 0x05)                 // type
@@ -107,24 +141,30 @@ public class BsonWriter {
         } else if (value instanceof Map<?, ?> m) {
             ensureCapacity(1 + keyBytes.length + 1);
             buffer.put((byte) 0x03); // embedded document
-            buffer.put(keyBytes).put((byte) 0x00);
+            appendCString(keyBytes);
 
             Node child = new Node(parentNode);
             parentNode.nested.add(child);
             needTraverseObject = true;
-            stack.addLast(new WriterContext(buffer.position(), (Map<String, Object>) m, child, 0));
+            stack.addLast(new WriterContext(buffer.position(), m, child, 0));
         } else if (value instanceof List<?> list) {
             ensureCapacity(1 + keyBytes.length + 1);
             buffer.put((byte) 0x04); // array
-            buffer.put(keyBytes).put((byte) 0x00);
+            appendCString(keyBytes);
 
             Node child = new Node(parentNode);
             parentNode.nested.add(child);
+            needTraverseObject = true;
+            stack.addLast(new WriterContext(buffer.position(), list, child, 0));
         } else {
             throw new IllegalArgumentException("Unsupported type: " + value.getClass());
         }
 
         return buffer.position() - start;
+    }
+
+    private void appendCString(byte[] keyBytes) {
+        buffer.put(keyBytes).put((byte) 0x00);
     }
 
     private void writeLengths(Node node) {
@@ -145,12 +185,12 @@ public class BsonWriter {
 
     static class WriterContext {
         int position;
-        Map<String, Object> object;
+        Object object;
         Node node;
         int idx;
         int len;
 
-        WriterContext(int position, Map<String, Object> object, Node node, int idx) {
+        WriterContext(int position, Object object, Node node, int idx) {
             this.position = position;
             this.object = object;
             this.node = node;

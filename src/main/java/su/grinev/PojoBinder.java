@@ -93,11 +93,11 @@ public class PojoBinder {
                     if (isPrimitiveOrWrapperOrString(field.getValue().getType())) {
                         currentDocument.put(field.getKey(), field.getValue().get(ctx.o));
                     } else if (field.getValue().getType() == Map.class) {
-                        Map<String, Object> nestedDocument = new HashMap<>();
+                        Map<String, Object> nestedDocument = new LinkedHashMap<>();
                         currentDocument.put(field.getKey(), nestedDocument);
                         stack.addLast(new BinderContext(null,field.getValue().get(ctx.o), nestedDocument));
                     } else if (field.getValue().isAnnotationPresent(BsonType.class)) {
-                        Map<String, Object> nestedDocument = new HashMap<>();
+                        Map<String, Object> nestedDocument = new LinkedHashMap<>();
                         String discriminator = field.getValue().getAnnotation(BsonType.class).discriminator();
                         currentDocument.put(discriminator, field.getValue().get(ctx.o).getClass().getName());
                         currentDocument.put(field.getKey(), nestedDocument);
