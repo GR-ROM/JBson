@@ -8,15 +8,12 @@ import java.lang.reflect.InvocationTargetException;
 import java.util.*;
 import java.util.stream.Collectors;
 
-public class PojoBinder {
-
-    public PojoBinder() {
-    }
+public class Binder {
 
     public <T> T bind(Class<T> tClass, Map<String, Object> document) {
         Object rootObject = instantiate(tClass);
         Deque<BinderContext> stack = new LinkedList<>();
-        stack.addLast(new BinderContext(tClass, rootObject, document));
+        stack.addLast(new BinderContext(rootObject, document));
 
         while (!stack.isEmpty()) {
             BinderContext ctx = stack.removeLast();
@@ -28,15 +25,15 @@ public class PojoBinder {
                     } else if (value instanceof List) {
                         List list = new ArrayList();
                         m.put(key, list);
-                        stack.addLast(new BinderContext(null, list, value));
+                        stack.addLast(new BinderContext(list, value));
                     } else if (value instanceof Map) {
                         Map map = new HashMap();
                         m.put(ctx.o, map);
-                        stack.addLast(new BinderContext(null, map, value));
+                        stack.addLast(new BinderContext(map, value));
                     }
                 });
             } else {
-                Map<String, Field> fieldsMap = collectFields(ctx.tClass);
+                Map<String, Field> fieldsMap = collectFields(ctx.o.getClass());
                 Map<String, Object> documentMap = ((Map<String, Object>) ctx.document);
 
                 for (Map.Entry<String, Object> entry : documentMap.entrySet()) {
@@ -52,18 +49,18 @@ public class PojoBinder {
                         } else if (fieldsMap.get(key).getType().equals(List.class)) {
                             List list = new ArrayList();
                             fieldsMap.get(key).set(ctx.o, list);
-                            stack.addLast(new BinderContext(null, list, value));
+                            stack.addLast(new BinderContext(list, value));
                         } else if (fieldsMap.get(key).getType().equals(Map.class)) {
                             Map map = new HashMap();
                             fieldsMap.get(key).set(ctx.o, map);
-                            stack.addLast(new BinderContext(null, map, value));
+                            stack.addLast(new BinderContext(map, value));
                         } else if (fieldsMap.get(key).isAnnotationPresent(BsonType.class)) {
                             String discriminatorField = fieldsMap.get(key).getAnnotation(BsonType.class).discriminator();
                             String className = (String) documentMap.get(discriminatorField);
                             Class<?> targetCls = Class.forName(className);
                             Object newObject = instantiate(targetCls);
                             fieldsMap.get(key).set(ctx.o, newObject);
-                            stack.addLast(new BinderContext(targetCls, newObject, value));
+                            stack.addLast(new BinderContext(newObject, value));
                         }
                     } catch (IllegalAccessException | ClassNotFoundException ex) {
                         throw new RuntimeException(ex);
@@ -77,23 +74,31 @@ public class PojoBinder {
     public Map<String, Object> unbind(Object o) {
         Map<String, Object> rootDocument = new HashMap<>();
         Deque<BinderContext> stack = new LinkedList<>();
-        stack.addLast(new BinderContext(null, o, rootDocument));
+        stack.addLast(new BinderContext(o, rootDocument));
 
         while (!stack.isEmpty()) {
             BinderContext ctx = stack.removeLast();
             Map<String, Object> currentDocument = (Map<String, Object>) ctx.document;
             Map<String, Field> fieldMap = collectFields(ctx.o.getClass());
 
-            Object nestedObject = null;
             try {
                 for (Map.Entry<String, Field> field : fieldMap.entrySet()) {
+                    if (currentDocument.get(field.getKey()) != null) {
+                        continue;
+                    }
+
                     if (isPrimitiveOrWrapperOrString(field.getValue().getType())) {
                         currentDocument.put(field.getKey(), field.getValue().get(ctx.o));
                     } else if (field.getValue().getType() == Map.class) {
-                        Map<String, Object> nestedDocument = new HashMap<>();
-                        nestedObject = field.getValue().get(ctx.o);
+                        Map<String, Object> nestedDocument = new LinkedHashMap<>();
                         currentDocument.put(field.getKey(), nestedDocument);
-                        stack.addLast(new BinderContext(null, nestedObject, nestedDocument));
+                        stack.addLast(new BinderContext(field.getValue().get(ctx.o), nestedDocument));
+                    } else if (field.getValue().isAnnotationPresent(BsonType.class)) {
+                        Map<String, Object> nestedDocument = new LinkedHashMap<>();
+                        String discriminator = field.getValue().getAnnotation(BsonType.class).discriminator();
+                        currentDocument.put(discriminator, field.getValue().get(ctx.o).getClass().getName());
+                        currentDocument.put(field.getKey(), nestedDocument);
+                        stack.addLast(new BinderContext(field.getValue().get(ctx.o), nestedDocument));
                     }
                 }
             } catch (IllegalAccessException e) {
@@ -125,7 +130,6 @@ public class PojoBinder {
 
     public static boolean isPrimitiveOrWrapperOrString(Class<?> type) {
         return type.isPrimitive()
-                // Обёртки
                 || type == Boolean.class
                 || type == Byte.class
                 || type == Short.class
@@ -134,9 +138,7 @@ public class PojoBinder {
                 || type == Float.class
                 || type == Double.class
                 || type == Character.class
-                // Строка
                 || type == String.class
-                // Примитивные массивы
                 || type == byte[].class
                 || type == short[].class
                 || type == int[].class
@@ -145,7 +147,6 @@ public class PojoBinder {
                 || type == double[].class
                 || type == boolean[].class
                 || type == char[].class
-                // Массивы обёрток и строк
                 || type == Boolean[].class
                 || type == Byte[].class
                 || type == Short[].class
@@ -155,10 +156,9 @@ public class PojoBinder {
                 || type == Double[].class
                 || type == Character[].class
                 || type == String[].class
-                // Коллекции и карты
                 || List.class.isAssignableFrom(type)
                 || Map.class.isAssignableFrom(type);
     }
 
-    record BinderContext(Class<?> tClass, Object o, Object document) {}
+    record BinderContext(Object o, Object document) {}
 }

@@ -10,8 +10,9 @@ repositories {
 }
 
 dependencies {
-//    compileOnly 'org.projectlombok:lombok:1.18.32'
-//    annotationProcessor 'org.projectlombok:lombok:1.18.32'
+// https://mvnrepository.com/artifact/org.projectlombok/lombok
+    implementation("org.projectlombok:lombok:1.18.38")
+    annotationProcessor 'org.projectlombok:lombok:1.18.38'
 
     testImplementation platform('org.junit:junit-bom:5.10.0')
     testImplementation 'org.junit.jupiter:junit-jupiter'
@@ -19,7 +20,7 @@ dependencies {
 
 java {
     toolchain {
-        languageVersion = JavaLanguageVersion.of(25)
+        languageVersion = JavaLanguageVersion.of(23)
     }
 }
 
