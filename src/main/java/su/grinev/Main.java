@@ -2,6 +2,8 @@ package su.grinev;
 
 import su.grinev.bson.BsonReader;
 import su.grinev.bson.BsonWriter;
+import su.grinev.test.VpnPacket;
+import su.grinev.test.VpnRequest;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -114,8 +116,11 @@ public class Main {
 
         Map m = Map.of(
                 "ver", "0.1",
-                "size", 12,
-                "type", "VpnPacket",
+                "type", "su.grinev.test.VpnPacket",
+                "opts", Map.of(
+                        "srcCountry", "kz",
+                        "destCountry", "ru"
+                ),
                 "data", Map.of(
                         "encoding", "RAW",
                         "packet", new byte[] { 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x7F, 0x7F, 0x7F, 0x7F }
@@ -128,11 +133,17 @@ public class Main {
         ByteBuffer b = bsonWriter.serialize(m);
 
         System.out.println(Arrays.toString(b.array()));
-        System.out.println(bsonReader.deserialize(b));
+
+        Map<String, Object> deserialized = bsonReader.deserialize(b);
+
+        PojoBinder binder = new PojoBinder();
+        VpnRequest<VpnPacket> request = binder.bind(VpnRequest.class, deserialized);
+
+        System.out.println(request);
 
         List<Long> resultParser = new ArrayList<>();
         ByteBuffer buffer = loadBsonFile("C:\\Users\\rgrin\\large_test_multiple.bson");
-        Map<String, Object> deserialized = Map.of();
+
         for (int i = 0; i < 10000; i++) {
                     long delta = System.nanoTime();
                     buffer.rewind();
