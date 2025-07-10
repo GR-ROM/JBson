@@ -2,13 +2,9 @@ package su.grinev.bson;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.util.HashMap;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 public class BsonReader {
-
     private final ObjectReader objectReader;
     private final Pool<Context> contextPool;
 
@@ -19,7 +15,7 @@ public class BsonReader {
 
     public Map<String, Object> deserialize(ByteBuffer buffer) {
         Map<String, Object> rootDocument = new HashMap<>();
-        LinkedList<Context> stack = new LinkedList<>();
+        Deque<Context> stack = new LinkedList<>();
         buffer.order(ByteOrder.LITTLE_ENDIAN);
         Context context = contextPool.get();
         stack.addLast(context.setPos(buffer.position())

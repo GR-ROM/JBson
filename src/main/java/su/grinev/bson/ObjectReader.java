@@ -10,10 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.LinkedList;
-import java.util.Map;
+import java.util.*;
 
 import static jdk.incubator.vector.ByteVector.SPECIES_PREFERRED;
 
@@ -27,7 +24,7 @@ public final class ObjectReader {
         contextPool = pool;
     }
 
-    public Map.Entry<String, Object> readElement(ByteBuffer buffer, LinkedList<Context> stack) {
+    public Map.Entry<String, Object> readElement(ByteBuffer buffer, Deque<Context> stack) {
         Object value;
 
         int type = buffer.get();
