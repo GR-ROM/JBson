@@ -4,7 +4,7 @@ A blazing-fast, minimal-overhead BSON serializer and deserializer for Java. Desi
 
 ## ⚡ Key Features
 
-- ✅ **High Performance**: Built from the ground up with speed in mind. Pure byte-level operations, zero-reflection runtime mode.
+- ✅ **High Performance**: Built from the ground up with speed in mind. Pure byte-level operations.
 - 🧩 **Fully Compliant**: Conforms to the BSON specification v1.1.
 - 🔧 **Custom POJO Binding**: Annotation-based field mapping for flexible document-object translation.
 - 📦 **No Dependencies**: Self-contained. No `bson`, `jackson`, or `gson` dependencies.
