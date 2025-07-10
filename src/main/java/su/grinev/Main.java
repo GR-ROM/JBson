@@ -61,7 +61,7 @@ public class Main {
                 0x33, 0x00, 0x07, 0x00, 0x00, 0x00, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x33, 0x00, 0x00, 0x00
         };
 
-        PojoBinder binder = new PojoBinder();
+        Binder binder = new Binder();
         BsonWriter bsonWriter = new BsonWriter();
         BsonReader bsonReader = new BsonReader();
 

@@ -8,10 +8,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.util.*;
 import java.util.stream.Collectors;
 
-public class PojoBinder {
-
-    public PojoBinder() {
-    }
+public class Binder {
 
     public <T> T bind(Class<T> tClass, Map<String, Object> document) {
         Object rootObject = instantiate(tClass);

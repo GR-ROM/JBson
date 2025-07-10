@@ -11,7 +11,7 @@ import java.util.Map;
 public class BsonWriter {
     private final LinkedList<WriterContext> stack = new LinkedList<>();
     private final Node lengthTreeRootNode = new Node(null);
-    private ByteBuffer buffer = ByteBuffer.wrap(new byte[2 * 1024 * 1024]);
+    private ByteBuffer buffer = ByteBuffer.wrap(new byte[1 * 1024 * 1024]);
     private boolean needTraverseObject;
 
     public ByteBuffer serialize(Map<String, Object> document) {
