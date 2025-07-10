@@ -84,16 +84,24 @@ public class PojoBinder {
             Map<String, Object> currentDocument = (Map<String, Object>) ctx.document;
             Map<String, Field> fieldMap = collectFields(ctx.o.getClass());
 
-            Object nestedObject = null;
             try {
                 for (Map.Entry<String, Field> field : fieldMap.entrySet()) {
+                    if (currentDocument.get(field.getKey()) != null) {
+                        continue;
+                    }
+
                     if (isPrimitiveOrWrapperOrString(field.getValue().getType())) {
                         currentDocument.put(field.getKey(), field.getValue().get(ctx.o));
                     } else if (field.getValue().getType() == Map.class) {
                         Map<String, Object> nestedDocument = new HashMap<>();
-                        nestedObject = field.getValue().get(ctx.o);
                         currentDocument.put(field.getKey(), nestedDocument);
-                        stack.addLast(new BinderContext(null, nestedObject, nestedDocument));
+                        stack.addLast(new BinderContext(null,field.getValue().get(ctx.o), nestedDocument));
+                    } else if (field.getValue().isAnnotationPresent(BsonType.class)) {
+                        Map<String, Object> nestedDocument = new HashMap<>();
+                        String discriminator = field.getValue().getAnnotation(BsonType.class).discriminator();
+                        currentDocument.put(discriminator, field.getValue().get(ctx.o).getClass().getName());
+                        currentDocument.put(field.getKey(), nestedDocument);
+                        stack.addLast(new BinderContext(null, field.getValue().get(ctx.o), nestedDocument));
                     }
                 }
             } catch (IllegalAccessException e) {
@@ -125,7 +133,6 @@ public class PojoBinder {
 
     public static boolean isPrimitiveOrWrapperOrString(Class<?> type) {
         return type.isPrimitive()
-                // Обёртки
                 || type == Boolean.class
                 || type == Byte.class
                 || type == Short.class
@@ -134,9 +141,7 @@ public class PojoBinder {
                 || type == Float.class
                 || type == Double.class
                 || type == Character.class
-                // Строка
                 || type == String.class
-                // Примитивные массивы
                 || type == byte[].class
                 || type == short[].class
                 || type == int[].class
@@ -145,7 +150,6 @@ public class PojoBinder {
                 || type == double[].class
                 || type == boolean[].class
                 || type == char[].class
-                // Массивы обёрток и строк
                 || type == Boolean[].class
                 || type == Byte[].class
                 || type == Short[].class
@@ -155,7 +159,6 @@ public class PojoBinder {
                 || type == Double[].class
                 || type == Character[].class
                 || type == String[].class
-                // Коллекции и карты
                 || List.class.isAssignableFrom(type)
                 || Map.class.isAssignableFrom(type);
     }

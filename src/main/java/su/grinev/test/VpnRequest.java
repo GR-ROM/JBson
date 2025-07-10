@@ -1,15 +1,23 @@
 package su.grinev.test;
 
 import annotation.BsonType;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.NoArgsConstructor;
+import lombok.ToString;
 
 import java.util.Map;
 
+@Builder
+@ToString
+@NoArgsConstructor
+@AllArgsConstructor
 public class VpnRequest<T> {
-    String ver;
-    String type;
-    Map<String, String> opts;
+    private String ver;
+    private String type;
+    private Map<String, String> opts;
     @BsonType(discriminator = "type")
-    T data;
+    private T data;
 }
 
 

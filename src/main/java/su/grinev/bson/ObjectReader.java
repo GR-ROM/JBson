@@ -100,7 +100,7 @@ public final class ObjectReader {
         return new String(buf, 0, len - 1, StandardCharsets.UTF_8);
     }
 
-    public static int findNullByteSIMD(ByteBuffer buffer) {
+    public static int findNullByteSimd(ByteBuffer buffer) {
         int start = buffer.position();
         int limit = buffer.limit();
         int i = start;
@@ -127,7 +127,7 @@ public final class ObjectReader {
 
     public String readCStringSIMD(ByteBuffer buffer) {
         int start = buffer.position();
-        int nullPos = findNullByteSIMD(buffer);
+        int nullPos = findNullByteSimd(buffer);
 
         int len = nullPos - start;
         if (buf.length < len) {

@@ -15,8 +15,6 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
-//TIP To <b>Run</b> code, press <shortcut actionId="Run"/> or
-// click the <icon src="AllIcons.Actions.Execute"/> icon in the gutter.
 public class Main {
 
     public static byte[] loadJsonFile(String filePath) throws IOException {
@@ -59,7 +57,6 @@ public class Main {
 //        System.out.println(resultTokeinzer.stream().sorted().toList().get(resultTokeinzer.size() / 2) / 1000);
 //        System.out.println(resultParser.stream().sorted().toList().get(resultParser.size() / 2) / 1000);
 
-        // Hex-представление BSON-документа (handcrafted):
         byte[] bson1 = new byte[] {
                 0x45, 0x00, 0x00, 0x00, 0x02, 0x6b, 0x65, 0x79, 0x31, 0x00, 0x07, 0x00, 0x00, 0x00, 0x76, 0x61, 0x6c, 0x75,
                 0x65, 0x31, 0x00, 0x03, 0x6e, 0x65, 0x73, 0x74, 0x65, 0x64, 0x00, 0x27, 0x00, 0x00, 0x00, 0x02, 0x6b, 0x65,
@@ -67,92 +64,31 @@ public class Main {
                 0x33, 0x00, 0x07, 0x00, 0x00, 0x00, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x33, 0x00, 0x00, 0x00
         };
 
-        byte[] bson = new byte[] {
-                // total document length = 100 (0x64)
-                0x64, 0x00, 0x00, 0x00,
-
-                // "name": "Alice"
-                0x02, 'n', 'a', 'm', 'e', 0x00,
-                0x06, 0x00, 0x00, 0x00, // length of "Alice" (5 + null)
-                'A', 'l', 'i', 'c', 'e', 0x00,
-
-                // "age": 30
-                0x10, 'a', 'g', 'e', 0x00,
-                0x1E, 0x00, 0x00, 0x00,
-
-                // "address": { "city": "Springfield", "zip": 12345 }
-                0x03, 'a', 'd', 'd', 'r', 'e', 's', 's', 0x00,
-                0x20, 0x00, 0x00, 0x00,  // embedded document size = 36 (0x24)
-
-                // "city": "Springfield"
-                0x02, 'c', 'i', 't', 'y', 0x00,
-                0x0C, 0x00, 0x00, 0x00,
-                'S', 'p', 'r', 'i', 'n', 'g', 'f', 'i', 'e', 'l', 'd', 0x00,
-
-                // "zip": 12345
-                0x10, 'z', 'i', 'p', 0x00,
-                0x39, 0x30, 0x00, 0x00, // 12345 little endian
-
-                0x00, // end of "address" document
-
-                // "tags": [ "user", "admin" ]
-                0x04, 't', 'a', 'g', 's', 0x00,
-                0x1A, 0x00, 0x00, 0x00,  // array doc length = 38 (0x26)
-
-                // "0": "user"
-                0x02, '0', 0x00,
-                0x05, 0x00, 0x00, 0x00,
-                'u', 's', 'e', 'r', 0x00,
-
-                // "1": "admin"
-                0x02, '1', 0x00,
-                0x06, 0x00, 0x00, 0x00,
-                'a', 'd', 'm', 'i', 'n', 0x00,
-
-                0x00, // end of array
-
-                0x00 // end of root document
-        };
-
-        Map m = Map.of(
-                "ver", "0.1",
-                "type", "su.grinev.test.VpnPacket",
-                "opts", Map.of(
-                        "srcCountry", "kz",
-                        "destCountry", "ru"
-                ),
-                "data", Map.of(
-                        "encoding", "RAW",
-                        "packet", new byte[] { 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x7F, 0x7F, 0x7F, 0x7F }
-                )
-        );
-
+        PojoBinder binder = new PojoBinder();
         BsonWriter bsonWriter = new BsonWriter();
         BsonReader bsonReader = new BsonReader();
 
-        ByteBuffer b = bsonWriter.serialize(m);
+        VpnRequest<VpnPacket> request = VpnRequest.<VpnPacket>builder()
+                .ver("0.1")
+                .type(VpnPacket.class.getTypeName())
+                .opts(Map.of(
+                        "srcCountry", "kz",
+                        "dstCounty", "ru"
+                        ))
+                .data(VpnPacket.builder()
+                        .encoding("RAW")
+                        .packet(new byte[] { 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x7F, 0x7F, 0x7F, 0x7F })
+                        .build())
+                .build();
+
+        Map<String, Object> documentMap = binder.unbind(request);
+        ByteBuffer b = bsonWriter.serialize(documentMap);
 
         System.out.println(Arrays.toString(b.array()));
 
         Map<String, Object> deserialized = bsonReader.deserialize(b);
+        VpnRequest<VpnPacket> request1 = binder.bind(VpnRequest.class, deserialized);
 
-        PojoBinder binder = new PojoBinder();
-        VpnRequest<VpnPacket> request = binder.bind(VpnRequest.class, deserialized);
-
-        System.out.println(request);
-
-        List<Long> resultParser = new ArrayList<>();
-        ByteBuffer buffer = loadBsonFile("C:\\Users\\rgrin\\large_test_multiple.bson");
-
-        for (int i = 0; i < 10000; i++) {
-                    long delta = System.nanoTime();
-                    buffer.rewind();
-                    //deserialized = bsonReader.deserialize(buffer);
-                    delta = System.nanoTime() - delta;
-                   resultParser.add(delta);
-        }
-
-        System.out.println(deserialized);
-        System.out.println(resultParser.stream().sorted().toList().get(resultParser.size() / 2) / 1000);
+        System.out.println(request1);
     }
 }

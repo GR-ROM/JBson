@@ -22,7 +22,10 @@ public class BsonReader {
         LinkedList<Context> stack = new LinkedList<>();
         buffer.order(ByteOrder.LITTLE_ENDIAN);
         Context context = contextPool.get();
-        stack.addLast(context.setPos(buffer.position()).setKey("").setValue(rootDocument));
+        stack.addLast(context.setPos(buffer.position())
+                .setKey("")
+                .setValue(rootDocument)
+        );
 
         while (!stack.isEmpty()) {
             context = stack.removeFirst();
@@ -35,12 +38,10 @@ public class BsonReader {
 
             if (context.getValue() instanceof Map m) {
                 while ((element = objectReader.readElement(buffer, stack)) != null) {
-                    System.out.println(element);
                     m.put(element.getKey(), element.getValue());
                 }
             } else if (context.getValue() instanceof List l) {
                 while ((element = objectReader.readElement(buffer, stack)) != null) {
-                    System.out.println(element);
                     l.add(element.getValue());
                 }
 

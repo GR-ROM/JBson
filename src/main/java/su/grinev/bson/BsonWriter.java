@@ -11,7 +11,7 @@ import java.util.Map;
 public class BsonWriter {
     private final LinkedList<WriterContext> stack = new LinkedList<>();
     private final Node lengthTreeRootNode = new Node(null);
-    private ByteBuffer buffer = ByteBuffer.wrap(new byte[1024]);
+    private ByteBuffer buffer = ByteBuffer.allocateDirect(128 * 1024);
     private boolean needTraverseObject;
 
     public ByteBuffer serialize(Map<String, Object> document) {
@@ -35,7 +35,10 @@ public class BsonWriter {
             buffer.position(buffer.position() + 4); // reserve space for length
         }
 
-        List<Map.Entry<String, Object>> entries = document.entrySet().stream().sorted(Map.Entry.comparingByKey()).toList();
+        List<Map.Entry<String, Object>> entries = document.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .toList();
+
         needTraverseObject = false;
         while (ctx.idx < entries.size()) {
             ctx.len += writeElement(entries.get(ctx.idx).getKey(), entries.get(ctx.idx).getValue(), node);
@@ -56,23 +59,6 @@ public class BsonWriter {
         buffer.put((byte) 0x00); // document terminator
         ctx.len += 1;
         node.length = ctx.len;
-    }
-
-    private void writeArray(List<Object> list, Node node, int idx) {
-        ensureCapacity(4);
-        node.lengthPos = buffer.position();
-        buffer.position(buffer.position() + 4); // reserve space for length
-
-        int len = 0;
-        for (int i = 0; i < list.size(); i++) {
-            String key = Integer.toString(i);
-            len += writeElement(key, list.get(i), node);
-        }
-
-        ensureCapacity(1);
-        buffer.put((byte) 0x00); // array terminator
-        len += 1;
-        node.length = len;
     }
 
     @SuppressWarnings("unchecked")
