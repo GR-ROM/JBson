@@ -18,13 +18,13 @@ public final class ObjectReader {
     private byte[] buf = new byte[10000];
     private static final byte[] temp = new byte[SPECIES_PREFERRED.length()];
     private static final VectorSpecies<Byte> SPECIES = SPECIES_PREFERRED;
-    private final Pool<Context> contextPool;
+    private final Pool<ReaderContext> contextPool;
 
-    public ObjectReader(Pool<Context> pool) {
+    public ObjectReader(Pool<ReaderContext> pool) {
         contextPool = pool;
     }
 
-    public Map.Entry<String, Object> readElement(ByteBuffer buffer, Deque<Context> stack) {
+    public Map.Entry<String, Object> readElement(ByteBuffer buffer, Deque<ReaderContext> stack) {
         Object value;
 
         int type = buffer.get();
@@ -41,21 +41,21 @@ public final class ObjectReader {
                 int length = buffer.getInt();
                 value = new HashMap<>();
                 buffer.position(buffer.position() - 4);
-                Context context = contextPool.get()
+                ReaderContext readerContext = contextPool.get()
                         .setPos(buffer.position())
                         .setKey(key)
                         .setValue(value);
-                stack.add(context);
+                stack.add(readerContext);
                 buffer.position(buffer.position() + length);
             }
             case 0x04 -> {
                 int length = buffer.getInt();
                 value = new ArrayList<>();
                 buffer.position(buffer.position() - 4);
-                Context context = contextPool.get()
+                ReaderContext readerContext = contextPool.get()
                         .setPos(buffer.position())
                         .setValue(value);
-                stack.add(context);
+                stack.add(readerContext);
                 buffer.position(buffer.position() + length);
             }
             case 0x05 -> value = readBinary(buffer);         // Binary data

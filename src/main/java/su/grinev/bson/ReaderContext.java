@@ -1,11 +1,11 @@
 package su.grinev.bson;
 
-public class Context {
+public class ReaderContext {
     private int pos;
     private String key;
     private Object value;
 
-    public Context(int pos) {
+    public ReaderContext(int pos) {
         this.pos = pos;
     }
 
@@ -17,17 +17,17 @@ public class Context {
         return value;
     }
 
-    public Context setPos(int pos) {
+    public ReaderContext setPos(int pos) {
         this.pos = pos;
         return this;
     }
 
-    public Context setValue(Object value) {
+    public ReaderContext setValue(Object value) {
         this.value = value;
         return this;
     }
 
-    public Context setKey(String key) {
+    public ReaderContext setKey(String key) {
         this.key = key;
         return this;
     }
