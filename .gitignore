@@ -42,3 +42,5 @@ bin/
 .DS_Store
 /.idea/.name
 /.idea/vcs.xml
+/.idea/intellij-javadocs-4.0.1.xml
+/.idea/uiDesigner.xml
