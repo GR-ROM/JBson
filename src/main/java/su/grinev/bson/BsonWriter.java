@@ -1,5 +1,9 @@
 package su.grinev.bson;
 
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+import lombok.experimental.Accessors;
+
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
@@ -12,72 +16,59 @@ public class BsonWriter {
     private final LinkedList<WriterContext> stack = new LinkedList<>();
     private final Node lengthTreeRootNode = new Node(null);
     private ByteBuffer buffer = ByteBuffer.wrap(new byte[1 * 1024 * 1024]);
+    private Pool<WriterContext> writerContextPool = new Pool<>(10000, WriterContext::new);
     private boolean needTraverseObject;
 
     public ByteBuffer serialize(Map<String, Object> document) {
         buffer.order(ByteOrder.LITTLE_ENDIAN);
         buffer.rewind();
-        stack.addLast(new WriterContext(0, document, lengthTreeRootNode, 0));
+
+        WriterContext writerContext = writerContextPool.get();
+        stack.addLast(writerContext.setNode(lengthTreeRootNode)
+                .setIdx(0)
+                .setLen(0)
+                .setMapEntries(document.entrySet().stream().toList())
+                .setListEntries(null));
 
         while (!stack.isEmpty()) {
-            WriterContext context = stack.getLast();
+            WriterContext ctx = stack.getLast();
+            Node node = ctx.node;
 
-            if (context.object instanceof Map m) {
-                writeDocument((Map<String, Object>) m, context.node, context);
-            } else if (context.object instanceof List l) {
-                writeDocument((List<Object>) l, context.node, context);
+            if (ctx.idx == 0) {
+                ensureCapacity(4);
+                node.lengthPos = buffer.position();
+                buffer.position(buffer.position() + 4); // reserve space for length
+            }
+
+            needTraverseObject = false;
+
+            if (ctx.mapEntries != null) {
+                while (ctx.idx < ctx.mapEntries.size()) {
+                    ctx.len += writeElement(ctx.mapEntries.get(ctx.idx).getKey(), ctx.mapEntries.get(ctx.idx).getValue(), node);
+                    ctx.idx++;
+                    if (needTraverseObject) {
+                        break;
+                    }
+                }
+            } else if (ctx.listEntries != null) {
+                while (ctx.idx < ctx.listEntries.size()) {
+                    ctx.len += writeElement(Integer.toString(ctx.idx), ctx.listEntries.get(ctx.idx), node);
+                    ctx.idx++;
+                    if (needTraverseObject) {
+                        break;
+                    }
+                }
+            }
+
+            if (!needTraverseObject) {
+                updateParentLengths(ctx);
+                appendTerminator(node, ctx);
+                stack.removeLast();
             }
         }
 
-        writeLengths(lengthTreeRootNode);
+        patchLengths(lengthTreeRootNode);
         return buffer.flip();
-    }
-
-    @SuppressWarnings("unchecked")
-    private void writeDocument(Map<String, Object> document, Node node, WriterContext ctx) {
-        if (ctx.idx == 0) {
-            ensureCapacity(4);
-            node.lengthPos = buffer.position();
-            buffer.position(buffer.position() + 4); // reserve space for length
-        }
-
-        List<Map.Entry<String, Object>> entries = document.entrySet().stream()
-                .toList();
-
-        needTraverseObject = false;
-        while (ctx.idx < entries.size()) {
-            ctx.len += writeElement(entries.get(ctx.idx).getKey(), entries.get(ctx.idx).getValue(), node);
-            ctx.idx++;
-            if (needTraverseObject) {
-                return;
-            }
-        }
-
-        updateParentLengths(ctx);
-        appendTerminator(node, ctx);
-
-        stack.removeLast();
-    }
-
-    private void writeDocument(List<Object> document, Node node, WriterContext ctx) {
-        if (ctx.idx == 0) {
-            ensureCapacity(4);
-            node.lengthPos = buffer.position();
-            buffer.position(buffer.position() + 4); // reserve space for length
-        }
-        needTraverseObject = false;
-
-        for (; ctx.idx < document.size(); ctx.idx++) {
-            ctx.len += writeElement(Integer.toString(ctx.idx), document.get(ctx.idx), node);
-            if (needTraverseObject) {
-                return;
-            }
-        }
-
-        updateParentLengths(ctx);
-        appendTerminator(node, ctx);
-
-        stack.removeLast();
     }
 
     private void appendTerminator(Node node, WriterContext ctx) {
@@ -129,25 +120,32 @@ public class BsonWriter {
             buffer.put((byte) (b ? 1 : 0));
         } else if (value == null) {
             ensureCapacity(1 + keyBytes.length + 1);
-            buffer.put((byte) 0x0A); // null
+            buffer.put((byte) 0x0A);             // null
             appendCString(keyBytes);
-        } else if (value instanceof byte[] bytes) {  // binary data
+        } else if (value instanceof byte[] bytes) { // binary data
             ensureCapacity(1 + keyBytes.length + 1 + 4 + 1 + bytes.length);
-            buffer.put((byte) 0x05)                 // type
-                    .put(keyBytes).put((byte) 0x00) // cstring
-                    .putInt(bytes.length)           // block length
-                    .put((byte) 0x00)               // generic subtype
-                    .put(bytes);                    // data
-        } else if (value instanceof Map<?, ?> m) {
+            buffer.put((byte) 0x05);            // type
+            appendCString(keyBytes);
+            buffer.putInt(bytes.length)      // block length
+                    .put((byte) 0x00)           // generic subtype
+                    .put(bytes);               // data
+        } else if (value instanceof Map) {
             ensureCapacity(1 + keyBytes.length + 1);
-            buffer.put((byte) 0x03); // embedded document
+            buffer.put((byte) 0x03);            // embedded document
             appendCString(keyBytes);
 
             Node child = new Node(parentNode);
             parentNode.nested.add(child);
             needTraverseObject = true;
-            stack.addLast(new WriterContext(buffer.position(), m, child, 0));
-        } else if (value instanceof List<?> list) {
+
+            WriterContext writerContext = writerContextPool.get();
+            stack.addLast(writerContext.setNode(child)
+                    .setIdx(0)
+                    .setLen(0)
+                    .setMapEntries(((Map<String, Object>) value).entrySet().stream().toList())
+                    .setListEntries(null)
+            );
+        } else if (value instanceof List) {
             ensureCapacity(1 + keyBytes.length + 1);
             buffer.put((byte) 0x04); // array
             appendCString(keyBytes);
@@ -155,7 +153,14 @@ public class BsonWriter {
             Node child = new Node(parentNode);
             parentNode.nested.add(child);
             needTraverseObject = true;
-            stack.addLast(new WriterContext(buffer.position(), list, child, 0));
+
+            WriterContext writerContext = writerContextPool.get();
+            stack.addLast(writerContext.setNode(child)
+                    .setIdx(0)
+                    .setLen(0)
+                    .setMapEntries(null)
+                    .setListEntries((List<Object>) value)
+            );
         } else {
             throw new IllegalArgumentException("Unsupported type: " + value.getClass());
         }
@@ -167,10 +172,10 @@ public class BsonWriter {
         buffer.put(keyBytes).put((byte) 0x00);
     }
 
-    private void writeLengths(Node node) {
+    private void patchLengths(Node node) {
         buffer.putInt(node.lengthPos, node.length + 4);
         for (Node child : node.nested) {
-            writeLengths(child);
+            patchLengths(child);
         }
     }
 
@@ -183,19 +188,15 @@ public class BsonWriter {
         }
     }
 
+    @Setter
+    @Accessors(chain = true)
+    @NoArgsConstructor
     static class WriterContext {
-        int position;
-        Object object;
         Node node;
         int idx;
         int len;
-
-        WriterContext(int position, Object object, Node node, int idx) {
-            this.position = position;
-            this.object = object;
-            this.node = node;
-            this.idx = idx;
-        }
+        List<Map.Entry<String, Object>> mapEntries;
+        List<Object> listEntries;
     }
 
     static class Node {
