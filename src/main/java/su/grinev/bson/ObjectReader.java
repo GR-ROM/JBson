@@ -15,7 +15,7 @@ import java.util.*;
 import static jdk.incubator.vector.ByteVector.SPECIES_PREFERRED;
 
 public final class ObjectReader {
-    private byte[] buf = new byte[10000];
+    private static byte[] cbuf = new byte[1000];
     private static final byte[] temp = new byte[SPECIES_PREFERRED.length()];
     private static final VectorSpecies<Byte> SPECIES = SPECIES_PREFERRED;
     private final Pool<ReaderContext> contextPool;
@@ -84,15 +84,16 @@ public final class ObjectReader {
             start = buffer.position();
         }
 
-        if (buf.length < len) {
-            buf = new byte[len * 2];
+        buffer.position(start);
+
+        if (cbuf.length < len) {
+            cbuf = new byte[cbuf.length * 2];
         }
 
-        buffer.position(start);
-        buffer.get(buf, 0, len - 1);
+        buffer.get(cbuf, 0, len - 1);
         buffer.get();
 
-        return new String(buf, 0, len - 1, StandardCharsets.UTF_8);
+        return new String(cbuf, 0, len - 1, StandardCharsets.UTF_8);
     }
 
     public static int findNullByteSimd(ByteBuffer buffer) {
@@ -123,16 +124,17 @@ public final class ObjectReader {
     public String readCStringSIMD(ByteBuffer buffer) {
         int start = buffer.position();
         int nullPos = findNullByteSimd(buffer);
-
         int len = nullPos - start;
-        if (buf.length < len) {
-            throw new IllegalArgumentException("Temp buffer too small");
-        }
 
         buffer.position(start);
-        buffer.get(buf, 0, len);
+
+        if (cbuf.length < len) {
+            cbuf = new byte[cbuf.length * 2];
+        }
+
+        buffer.get(cbuf, 0, len);
         buffer.position(buffer.position() + 1);
-        return new String(buf, 0, len, StandardCharsets.UTF_8);
+        return new String(cbuf, 0, len, StandardCharsets.UTF_8);
     }
 
     private byte[] readBinary(ByteBuffer buffer) {
