@@ -29,6 +29,19 @@ public class Main {
     }
 
     public static void main(String[] args) throws IOException {
+
+        Map<String, Object> doc1 = Map.of("a", 1);
+        Map<String, Object> doc2 = Map.of("b", 2);
+        List<Object> list = Arrays.asList(doc1, doc2);
+        Map<String, Object> doc = Map.of("list", list);
+
+        BsonWriter writer = new BsonWriter();
+        ByteBuffer buffer = writer.serialize(doc);
+        BsonReader reader = new BsonReader();
+
+        Map<String, Object> document = reader.deserialize(buffer);
+        System.out.println(document);
+
 //        byte[] largeJson = loadJsonFile("C:\\Users\\rgrin\\1MB.json");
 //        List<Long> resultTokeinzer = new ArrayList<>();
 //        List<Long> resultParser = new ArrayList<>();
@@ -116,5 +129,7 @@ public class Main {
 
         System.out.println("Serialization median time: %sus".formatted(Long.toString(sortedSerialization.get(sortedSerialization.size() / 2))));
         System.out.println("Deserialization median time: %sus".formatted(Long.toString(sortedDeserialization.get(sortedDeserialization.size() / 2))));
+
+
     }
 }

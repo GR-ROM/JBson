@@ -4,6 +4,7 @@ import org.bson.RawBsonDocument;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
+import su.grinev.bson.BsonReader;
 import su.grinev.bson.BsonWriter;
 
 import java.lang.reflect.Field;
@@ -83,7 +84,6 @@ public class BsonWriterTest {
         assertArrayEquals(data, read);
     }
 
-    @Disabled
     @Test
     void testNestedDocumentAndArray() {
         Map<String, Object> innerDoc = new LinkedHashMap<>();
@@ -121,6 +121,7 @@ public class BsonWriterTest {
         Map<String, Object> doc = Collections.singletonMap("list", list);
 
         ByteBuffer buffer = writer.serialize(doc);
+
         byte[] bytes = toByteArray(buffer);
         RawBsonDocument raw = new RawBsonDocument(bytes);
 
