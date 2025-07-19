@@ -1,19 +1,21 @@
 package su.grinev.bson;
 
-import lombok.NoArgsConstructor;
-import lombok.Setter;
-import lombok.experimental.Accessors;
-
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
-import java.util.*;
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.List;
+import java.util.Map;
+
+import static su.grinev.bson.WriterContext.fillForArray;
+import static su.grinev.bson.WriterContext.fillForDocument;
 
 public class BsonWriter {
-    public static final int INITIAL_POOL_SIZE = 10000;
+    public static final int INITIAL_POOL_SIZE = 1000;
     private final Deque<WriterContext> stack = new ArrayDeque<>(64);
-    private ByteBuffer buffer = ByteBuffer.wrap(new byte[1 * 1024 * 1024]);
-    private Pool<WriterContext> writerContextPool = new Pool<>(INITIAL_POOL_SIZE, WriterContext::new);
+    private ByteBuffer buffer = ByteBuffer.wrap(new byte[128 * 1024]);
+    private final Pool<WriterContext> writerContextPool = new Pool<>(INITIAL_POOL_SIZE, WriterContext::new);
     private boolean needTraverseObject;
 
     public ByteBuffer serialize(Map<String, Object> document) {
@@ -127,14 +129,7 @@ public class BsonWriter {
             needTraverseObject = true;
 
             WriterContext writerContext = writerContextPool.get();
-            stack.addLast(writerContext
-                    .setParent(ctx)
-                    .setLength(0)
-                    .setLengthPos(buffer.position())
-                    .setIdx(0)
-                    .setMapEntries(((Map<String, Object>) value).entrySet().stream().toList())
-                    .setListEntries(null)
-            );
+            stack.addLast(fillForDocument(writerContext, ctx, buffer.position(), (Map<String, Object>) value));
         } else if (value instanceof List) {
             ensureCapacity(1 + keyBytes.length + 1);
             buffer.put((byte) 0x04); // array
@@ -143,14 +138,7 @@ public class BsonWriter {
             needTraverseObject = true;
 
             WriterContext writerContext = writerContextPool.get();
-            stack.addLast(writerContext
-                    .setParent(ctx)
-                    .setLength(0)
-                    .setLengthPos(buffer.position())
-                    .setIdx(0)
-                    .setMapEntries(null)
-                    .setListEntries((List<Object>) value)
-            );
+            stack.addLast(fillForArray(writerContext, ctx, buffer.position(), (List<Object>) value));
         } else {
             throw new IllegalArgumentException("Unsupported type: " + value.getClass());
         }
@@ -165,22 +153,12 @@ public class BsonWriter {
 
     private void ensureCapacity(int additional) {
         if (buffer.remaining() < additional) {
+            int oldPosition = buffer.position();
             ByteBuffer oldBuffer = buffer;
             buffer = ByteBuffer.allocateDirect(Math.max(oldBuffer.capacity() * 2, oldBuffer.capacity() + additional));
             oldBuffer.flip();
             buffer.put(oldBuffer);
+            buffer.position(oldPosition);
         }
-    }
-
-    @Setter
-    @Accessors(chain = true)
-    @NoArgsConstructor
-    static class WriterContext {
-        WriterContext parent;
-        int idx;
-        int length = 0;
-        int lengthPos = 0;
-        List<Map.Entry<String, Object>> mapEntries;
-        List<Object> listEntries;
     }
 }
