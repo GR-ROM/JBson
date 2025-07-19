@@ -5,20 +5,11 @@ plugins {
 }
 
 group = 'su.grinev'
-version = '0.1.10'
+version = '0.1.11'
 
 repositories {
     mavenCentral()
     maven { url 'https://jitpack.io' }
-    maven {
-        name = "GitHubPackages"
-        url = uri("https://maven.pkg.github.com/GR-ROM/JBson")
-
-        credentials {
-            username = project.findProperty("gpr.user") ?: System.getenv("USERNAME")
-            password = project.findProperty("gpr.key") ?: System.getenv("TOKEN")
-        }
-    }
 }
 
 publishing {
