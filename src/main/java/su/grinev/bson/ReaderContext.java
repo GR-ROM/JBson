@@ -5,8 +5,8 @@ public class ReaderContext {
     private String key;
     private Object value;
 
-    public ReaderContext(int pos) {
-        this.pos = pos;
+    public ReaderContext() {
+        this.pos = 0;
     }
 
     public int getPos() {

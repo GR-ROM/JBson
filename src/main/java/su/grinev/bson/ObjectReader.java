@@ -35,37 +35,35 @@ public final class ObjectReader {
         String key = readCStringSIMD(buffer);
 
         switch (type) {
-            case 0x01 -> value = buffer.getDouble();         // Double
-            case 0x02 -> value = readString(buffer, false);         // UTF-8 String
-            case 0x03 -> {                                   // Embedded document
+            case 0x01 -> value = buffer.getDouble();
+            case 0x02 -> value = readString(buffer, false); // UTF-8 String
+            case 0x03 -> { // Embedded document
                 int length = buffer.getInt();
                 value = new HashMap<>();
-                buffer.position(buffer.position() - 4);
                 ReaderContext readerContext = contextPool.get()
-                        .setPos(buffer.position())
+                        .setPos(buffer.position() - 4)
                         .setKey(key)
                         .setValue(value);
                 stack.add(readerContext);
-                buffer.position(buffer.position() + length);
+                buffer.position(buffer.position() + length - 4);
             }
-            case 0x04 -> {
+            case 0x04 -> { // Array
                 int length = buffer.getInt();
                 value = new ArrayList<>();
-                buffer.position(buffer.position() - 4);
                 ReaderContext readerContext = contextPool.get()
-                        .setPos(buffer.position())
+                        .setPos(buffer.position() - 4)
                         .setValue(value);
                 stack.add(readerContext);
-                buffer.position(buffer.position() + length);
+                buffer.position(buffer.position() + length - 4);
             }
-            case 0x05 -> value = readBinary(buffer);         // Binary data
-            case 0x07 -> value = readObjectId(buffer);       // ObjectId
-            case 0x08 -> value = buffer.get() != 0;          // Boolean
-            case 0x09 -> value = readDateTime(buffer);       // LocalDateTime
-            case 0x0A -> value = null;                       // Null
-            case 0x10 -> value = buffer.getInt();            // Int32
-            case 0x12 -> value = buffer.getLong();           // Int64
-            case 0x13 -> value = readDecimal128(buffer);     // Decimal128
+            case 0x05 -> value = readBinary(buffer);
+            case 0x07 -> value = readObjectId(buffer);
+            case 0x08 -> value = buffer.get() != 0;
+            case 0x09 -> value = readDateTime(buffer);
+            case 0x0A -> value = null;
+            case 0x10 -> value = buffer.getInt();
+            case 0x12 -> value = buffer.getLong();
+            case 0x13 -> value = readDecimal128(buffer);
             default -> throw new IllegalArgumentException("Unsupported BSON type: 0x" + Integer.toHexString(type));
         }
 

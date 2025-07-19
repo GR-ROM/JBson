@@ -34,6 +34,7 @@ public class BsonWriter {
 
             if (ctx.idx == 0) {
                 ensureCapacity(4);
+                ctx.length += 4;
                 buffer.position(buffer.position() + 4); // reserve space for length
             }
 
@@ -59,7 +60,6 @@ public class BsonWriter {
 
             if (!needTraverseObject) {
                 appendTerminator(ctx);
-                ctx.length += 4;
                 buffer.putInt(ctx.lengthPos, ctx.length);
                 if (ctx.parent != null) {
                     ctx.parent.length += ctx.length;
@@ -127,7 +127,6 @@ public class BsonWriter {
             needTraverseObject = true;
 
             WriterContext writerContext = writerContextPool.get();
-
             stack.addLast(writerContext
                     .setParent(ctx)
                     .setLength(0)

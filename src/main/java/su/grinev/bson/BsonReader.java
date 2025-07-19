@@ -9,13 +9,13 @@ public class BsonReader {
     private final Pool<ReaderContext> contextPool;
 
     public BsonReader() {
-        contextPool = new Pool<>(10000, () -> new ReaderContext(0));
+        contextPool = new Pool<>(10000, ReaderContext::new);
         objectReader = new ObjectReader(contextPool);
     }
 
     public Map<String, Object> deserialize(ByteBuffer buffer) {
         Map<String, Object> rootDocument = new HashMap<>();
-        final Deque<ReaderContext> stack = new ArrayDeque<>(64);
+        Deque<ReaderContext> stack = new ArrayDeque<>(64);
 
         buffer.order(ByteOrder.LITTLE_ENDIAN);
         ReaderContext readerContext = contextPool.get();
@@ -25,7 +25,7 @@ public class BsonReader {
         );
 
         while (!stack.isEmpty()) {
-            readerContext = stack.removeFirst();
+            readerContext = stack.removeLast();
 
             buffer.position(readerContext.getPos());
             contextPool.release(readerContext);
