@@ -14,7 +14,7 @@ import static su.grinev.bson.WriterContext.fillForDocument;
 public class BsonWriter {
     public static final int INITIAL_POOL_SIZE = 1000;
     private final Deque<WriterContext> stack = new ArrayDeque<>(64);
-    private ByteBuffer buffer = ByteBuffer.wrap(new byte[128 * 1024]);
+    private ByteBuffer buffer = ByteBuffer.wrap(new byte[64 * 1024]);
     private final Pool<WriterContext> writerContextPool = new Pool<>(INITIAL_POOL_SIZE, WriterContext::new);
     private boolean needTraverseObject;
 
@@ -23,13 +23,7 @@ public class BsonWriter {
         buffer.rewind();
 
         WriterContext writerContext = writerContextPool.get();
-        stack.addLast(writerContext
-                .setParent(null)
-                .setLength(0)
-                .setLengthPos(buffer.position())
-                .setIdx(0)
-                .setMapEntries(document.entrySet().stream().toList())
-                .setListEntries(null));
+        stack.addLast(fillForDocument(writerContext, null, 0, document));
 
         while (!stack.isEmpty()) {
             WriterContext ctx = stack.getLast();
@@ -61,7 +55,7 @@ public class BsonWriter {
             }
 
             if (!needTraverseObject) {
-                appendTerminator(ctx);
+                writeTerminator(ctx);
                 buffer.putInt(ctx.lengthPos, ctx.length);
                 if (ctx.parent != null) {
                     ctx.parent.length += ctx.length;
@@ -73,7 +67,7 @@ public class BsonWriter {
         return buffer.flip();
     }
 
-    private void appendTerminator(WriterContext ctx) {
+    private void writeTerminator(WriterContext ctx) {
         ensureCapacity(1);
         buffer.put((byte) 0x00);
         ctx.length += 1;
@@ -83,82 +77,97 @@ public class BsonWriter {
         int start = buffer.position();
         byte[] keyBytes = key.getBytes(StandardCharsets.UTF_8);
 
-        if (value instanceof String s) {
-            byte[] strBytes = s.getBytes(StandardCharsets.UTF_8);
-            ensureCapacity(1 + keyBytes.length + 1 + 4 + strBytes.length + 1);
-            buffer.put((byte) 0x02); // string
-            appendCString(keyBytes);
-            buffer.putInt(strBytes.length + 1);
-            appendCString(strBytes);
-        } else if (value instanceof Integer i) {
-            ensureCapacity(1 + keyBytes.length + 1 + 4);
-            buffer.put((byte) 0x10); // int32
-            appendCString(keyBytes);
-            buffer.putInt(i);
-        } else if (value instanceof Long l) {
-            ensureCapacity(1 + keyBytes.length + 1 + 8);
-            buffer.put((byte) 0x12); // int64
-            appendCString(keyBytes);
-            buffer.putLong(l);
-        } else if (value instanceof Double d) {
-            ensureCapacity(1 + keyBytes.length + 1 + 8);
-            buffer.put((byte) 0x01); // double
-            appendCString(keyBytes);
-            buffer.putDouble(d);
-        } else if (value instanceof Boolean b) {
-            ensureCapacity(1 + keyBytes.length + 1 + 1);
-            buffer.put((byte) 0x08); // boolean
-            appendCString(keyBytes);
-            buffer.put((byte) (b ? 1 : 0));
-        } else if (value == null) {
-            ensureCapacity(1 + keyBytes.length + 1);
-            buffer.put((byte) 0x0A);             // null
-            appendCString(keyBytes);
-        } else if (value instanceof byte[] bytes) { // binary data
-            ensureCapacity(1 + keyBytes.length + 1 + 4 + 1 + bytes.length);
-            buffer.put((byte) 0x05);            // type
-            appendCString(keyBytes);
-            buffer.putInt(bytes.length)      // block length
-                    .put((byte) 0x00)           // generic subtype
-                    .put(bytes);               // data
-        } else if (value instanceof Map) {
-            ensureCapacity(1 + keyBytes.length + 1);
-            buffer.put((byte) 0x03);            // embedded document
-            appendCString(keyBytes);
+        switch (value) {
+            case String s -> {
+                byte[] strBytes = s.getBytes(StandardCharsets.UTF_8);
+                ensureCapacity(1 + keyBytes.length + 1 + 4 + strBytes.length + 1);
+                buffer.put((byte) 0x02); // string
 
-            needTraverseObject = true;
+                writeCString(keyBytes);
+                buffer.putInt(strBytes.length + 1);
+                writeCString(strBytes);
+            }
+            case Integer i -> {
+                ensureCapacity(1 + keyBytes.length + 1 + 4);
+                buffer.put((byte) 0x10); // int32
 
-            WriterContext writerContext = writerContextPool.get();
-            stack.addLast(fillForDocument(writerContext, ctx, buffer.position(), (Map<String, Object>) value));
-        } else if (value instanceof List) {
-            ensureCapacity(1 + keyBytes.length + 1);
-            buffer.put((byte) 0x04); // array
-            appendCString(keyBytes);
+                writeCString(keyBytes);
+                buffer.putInt(i);
+            }
+            case Long l -> {
+                ensureCapacity(1 + keyBytes.length + 1 + 8);
+                buffer.put((byte) 0x12); // int64
 
-            needTraverseObject = true;
+                writeCString(keyBytes);
+                buffer.putLong(l);
+            }
+            case Double d -> {
+                ensureCapacity(1 + keyBytes.length + 1 + 8);
+                buffer.put((byte) 0x01); // double
 
-            WriterContext writerContext = writerContextPool.get();
-            stack.addLast(fillForArray(writerContext, ctx, buffer.position(), (List<Object>) value));
-        } else {
-            throw new IllegalArgumentException("Unsupported type: " + value.getClass());
+                writeCString(keyBytes);
+                buffer.putDouble(d);
+            }
+            case Boolean b -> {
+                ensureCapacity(1 + keyBytes.length + 1 + 1);
+                buffer.put((byte) 0x08); // boolean
+
+                writeCString(keyBytes);
+                buffer.put((byte) (b ? 1 : 0));
+            }
+            case null -> {
+                ensureCapacity(1 + keyBytes.length + 1);
+                buffer.put((byte) 0x0A); // null
+
+                writeCString(keyBytes);
+            }
+            case byte[] bytes -> {
+                ensureCapacity(1 + keyBytes.length + 1 + 4 + 1 + bytes.length);
+                buffer.put((byte) 0x05); // type
+
+                writeCString(keyBytes);
+                buffer.putInt(bytes.length)      // block length
+                        .put((byte) 0x00)           // generic subtype
+                        .put(bytes);               // data
+            }
+            case Map map -> {
+                ensureCapacity(1 + keyBytes.length + 1);
+                buffer.put((byte) 0x03);            // embedded document
+
+                writeCString(keyBytes);
+
+                needTraverseObject = true;
+
+                WriterContext writerContext = writerContextPool.get();
+                stack.addLast(fillForDocument(writerContext, ctx, buffer.position(), map));
+            }
+            case List list -> {
+                ensureCapacity(1 + keyBytes.length + 1);
+                buffer.put((byte) 0x04); // array
+                writeCString(keyBytes);
+
+                needTraverseObject = true;
+
+                WriterContext writerContext = writerContextPool.get();
+                stack.addLast(fillForArray(writerContext, ctx, buffer.position(), list));
+            }
+            default -> throw new IllegalArgumentException("Unsupported type: " + value.getClass());
         }
 
         int len = buffer.position() - start;
         ctx.length += len;
     }
 
-    private void appendCString(byte[] keyBytes) {
+    private void writeCString(byte[] keyBytes) {
         buffer.put(keyBytes).put((byte) 0x00);
     }
 
     private void ensureCapacity(int additional) {
         if (buffer.remaining() < additional) {
-            int oldPosition = buffer.position();
             ByteBuffer oldBuffer = buffer;
-            buffer = ByteBuffer.allocateDirect(Math.max(oldBuffer.capacity() * 2, oldBuffer.capacity() + additional));
+            buffer = ByteBuffer.allocateDirect(Math.max(oldBuffer.capacity() * 2, oldBuffer.capacity() + additional)).order(ByteOrder.LITTLE_ENDIAN);
             oldBuffer.flip();
             buffer.put(oldBuffer);
-            buffer.position(oldPosition);
         }
     }
 }

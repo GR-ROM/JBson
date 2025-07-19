@@ -76,7 +76,7 @@ public class Main {
 
             deserializationTime.add((System.nanoTime() - delta) / 1000);
         }
-        System.out.println(Arrays.toString(b.array()));
+        //System.out.println(Arrays.toString(b.array()));
         System.out.println(request1);
 
         List<Long> sortedSerialization = serializationTime.stream().sorted().toList();
