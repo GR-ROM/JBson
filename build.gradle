@@ -21,6 +21,27 @@ repositories {
     }
 }
 
+publishing {
+    publications {
+        gpr(MavenPublication) {
+            from components.java
+            // опционально:
+            // artifactId = 'jbson'
+        }
+    }
+
+    repositories {
+        maven {
+            name = "GitHubPackages"
+            url = uri("https://maven.pkg.github.com/GR-ROM/JBson")
+            credentials {
+                username = project.findProperty("gpr.user") ?: System.getenv("USERNAME")
+                password = project.findProperty("gpr.key") ?: System.getenv("TOKEN")
+            }
+        }
+    }
+}
+
 dependencies {
 // https://mvnrepository.com/artifact/org.projectlombok/lombok
     implementation("org.projectlombok:lombok:1.18.38")
