@@ -17,7 +17,7 @@ publishing {
         gpr(MavenPublication) {
             from components.java
             groupId = group
-            artifactId = 'JBson'
+            artifactId = 'jbson'
             version = version
         }
     }
