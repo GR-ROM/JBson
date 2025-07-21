@@ -2,7 +2,6 @@ package su.grinev.bson;
 
 public class ReaderContext {
     private int pos;
-    private String key;
     private Object value;
 
     public ReaderContext() {
@@ -25,14 +24,5 @@ public class ReaderContext {
     public ReaderContext setValue(Object value) {
         this.value = value;
         return this;
-    }
-
-    public ReaderContext setKey(String key) {
-        this.key = key;
-        return this;
-    }
-
-    public String getKey() {
-        return key;
     }
 }

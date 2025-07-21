@@ -2,18 +2,15 @@ package su.grinev;
 
 import org.bson.RawBsonDocument;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
-import su.grinev.bson.BsonReader;
 import su.grinev.bson.BsonWriter;
 
-import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
 import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-public class BsonWriterTest {
+public class BsonWriterTestTest {
     private BsonWriter writer;
 
     @BeforeEach

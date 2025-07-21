@@ -1,9 +1,5 @@
 package su.grinev.bson;
 
-import jdk.incubator.vector.ByteVector;
-import jdk.incubator.vector.VectorMask;
-import jdk.incubator.vector.VectorSpecies;
-
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
@@ -12,47 +8,37 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.*;
 
-import static jdk.incubator.vector.ByteVector.SPECIES_PREFERRED;
-
 public final class ObjectReader {
-    private static byte[] cbuf = new byte[1000];
-    private static final byte[] temp = new byte[SPECIES_PREFERRED.length()];
-    private static final VectorSpecies<Byte> SPECIES = SPECIES_PREFERRED;
     private final Pool<ReaderContext> contextPool;
 
     public ObjectReader(Pool<ReaderContext> pool) {
         contextPool = pool;
     }
 
-    public Map.Entry<String, Object> readElement(ByteBuffer buffer, Deque<ReaderContext> stack) {
+    public boolean readElement(ByteBuffer buffer, Deque<ReaderContext> stack, Map<String, Object> map, List<Object> list) {
         Object value;
 
         int type = buffer.get();
         if (type == 0) {
-            return null;
+            return false;
         }
 
         String key = readCStringSIMD(buffer);
 
         switch (type) {
             case 0x01 -> value = buffer.getDouble();
-            case 0x02 -> value = readString(buffer, false); // UTF-8 String
+            case 0x02 -> value = readString(buffer); // UTF-8 String
             case 0x03 -> { // Embedded document
                 int length = buffer.getInt();
                 value = new HashMap<>();
-                ReaderContext readerContext = contextPool.get()
-                        .setPos(buffer.position() - 4)
-                        .setKey(key)
-                        .setValue(value);
+                ReaderContext readerContext = contextPool.get().setPos(buffer.position() - 4).setValue(value);
                 stack.add(readerContext);
                 buffer.position(buffer.position() + length - 4);
             }
             case 0x04 -> { // Array
                 int length = buffer.getInt();
                 value = new ArrayList<>();
-                ReaderContext readerContext = contextPool.get()
-                        .setPos(buffer.position() - 4)
-                        .setValue(value);
+                ReaderContext readerContext = contextPool.get().setPos(buffer.position() - 4).setValue(value);
                 stack.add(readerContext);
                 buffer.position(buffer.position() + length - 4);
             }
@@ -67,74 +53,72 @@ public final class ObjectReader {
             default -> throw new IllegalArgumentException("Unsupported BSON type: 0x" + Integer.toHexString(type));
         }
 
-        return Map.entry(key, value);
+        if (map != null) {
+            map.put(key, value);
+        } else if (list != null) {
+            list.add(value);
+        }
+        return true;
     }
 
-    private String readString(ByteBuffer buffer, boolean isKey) {
-        int start;
-        int len;
+    private String readString(ByteBuffer buffer) {
+//        if (isKey) {
+//            start = buffer.position();
+//            while (buffer.get() != 0) {}
+//            int end = buffer.position();
+//            len = end - start;
+//        } else {
+            int len = buffer.getInt();
+            int start = buffer.position();
+//        }
 
-        if (isKey) {
-            start = buffer.position();
-            while (buffer.get() != 0) {}
-            int end = buffer.position();
-            len = end - start;
-        } else {
-            len = buffer.getInt();
-            start = buffer.position();
-        }
-
-        buffer.position(start);
-
-        if (cbuf.length < len) {
-            cbuf = new byte[cbuf.length * 2];
-        }
-
-        buffer.get(cbuf, 0, len - 1);
-        buffer.get();
-
-        return new String(cbuf, 0, len - 1, StandardCharsets.UTF_8);
+        buffer.position(buffer.position() + len);
+        return new String(buffer.array(), start, len - 1, StandardCharsets.UTF_8);
     }
 
-    public static int findNullByteSimd(ByteBuffer buffer) {
+    public String readCStringSIMD(ByteBuffer buffer) {
+        int start = buffer.position();
+        int nullPos = findNullByteSimdLong(buffer);
+        int len = nullPos - start;
+
+        buffer.position(buffer.position() + len + 1);
+        return new String(buffer.array(), start, len, StandardCharsets.UTF_8);
+    }
+
+    public int findNullByteSimdLong(ByteBuffer buffer) {
         int start = buffer.position();
         int limit = buffer.limit();
         int i = start;
 
-        while (i + SPECIES.length() <= limit) {
-            buffer.get(temp);
-            ByteVector vector = ByteVector.fromArray(SPECIES, temp, 0);
-            VectorMask<Byte> mask = vector.eq((byte) 0);
-
-            if (mask.anyTrue()) {
-                int indexInVector = mask.firstTrue();
-                return i + indexInVector;
+        while (i + Long.BYTES <= limit) {
+            long word = buffer.getLong(i);
+            if (hasZeroByte(word)) {
+                return i + firstZeroByteIndex(word);
             }
-
-            i += SPECIES.length();
+            i += Long.BYTES;
         }
 
-        while (i < limit && buffer.get() != 0) {
+        while (i < limit) {
+            if (buffer.get(i) == 0) {
+                return i;
+            }
             i++;
         }
 
         return i;
     }
 
-    public String readCStringSIMD(ByteBuffer buffer) {
-        int start = buffer.position();
-        int nullPos = findNullByteSimd(buffer);
-        int len = nullPos - start;
+    private static boolean hasZeroByte(long v) {
+        return ((v - 0x0101010101010101L) & ~v & 0x8080808080808080L) != 0;
+    }
 
-        buffer.position(start);
-
-        if (cbuf.length < len) {
-            cbuf = new byte[cbuf.length * 2];
+    private static int firstZeroByteIndex(long v) {
+        for (int i = 0; i < 8; i++) {
+            if (((v >>> (i * 8)) & 0xFF) == 0) {
+                return i;
+            }
         }
-
-        buffer.get(cbuf, 0, len);
-        buffer.position(buffer.position() + 1);
-        return new String(cbuf, 0, len, StandardCharsets.UTF_8);
+        return -1;
     }
 
     private byte[] readBinary(ByteBuffer buffer) {
@@ -148,12 +132,13 @@ public final class ObjectReader {
             }
             len = innerLen;
         }
-        byte[] data = new byte[len];
-        buffer.get(data);
-        return data;
+
+        byte[] temp = new byte[len];
+        buffer.get(temp);
+        return temp;
     }
 
-    private String readObjectId(ByteBuffer buffer) {
+    private static String readObjectId(ByteBuffer buffer) {
         byte[] oid = new byte[12];
         buffer.get(oid);
         StringBuilder sb = new StringBuilder(24);
@@ -163,14 +148,14 @@ public final class ObjectReader {
         return sb.toString();
     }
 
-    private LocalDateTime readDateTime(ByteBuffer buffer) {
+    private static LocalDateTime readDateTime(ByteBuffer buffer) {
         long epochMillis = buffer.getLong();
         return Instant.ofEpochMilli(epochMillis)
                 .atZone(ZoneOffset.UTC)
                 .toLocalDateTime();
     }
 
-    private BigDecimal readDecimal128(ByteBuffer buffer) {
+    private static BigDecimal readDecimal128(ByteBuffer buffer) {
         byte[] bytes = new byte[16];
         buffer.get(bytes);
         return new BigDecimal("0");

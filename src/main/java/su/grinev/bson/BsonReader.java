@@ -6,10 +6,9 @@ import java.util.*;
 
 public class BsonReader {
     private final ObjectReader objectReader;
-    private final Pool<ReaderContext> contextPool;
+    private final Pool<ReaderContext> contextPool = new Pool<>(1000, 10000, ReaderContext::new);
 
     public BsonReader() {
-        contextPool = new Pool<>(1000, 10000, ReaderContext::new);
         objectReader = new ObjectReader(contextPool);
     }
 
@@ -19,10 +18,7 @@ public class BsonReader {
 
         buffer.order(ByteOrder.LITTLE_ENDIAN);
         ReaderContext readerContext = contextPool.get();
-        stack.addLast(readerContext.setPos(buffer.position())
-                .setKey("")
-                .setValue(rootDocument)
-        );
+        stack.addLast(readerContext.setPos(buffer.position()).setValue(rootDocument));
 
         while (!stack.isEmpty()) {
             readerContext = stack.removeLast();
@@ -31,17 +27,12 @@ public class BsonReader {
             contextPool.release(readerContext);
             int len = buffer.getInt();
 
-            Map.Entry<String, Object> element;
-
             if (readerContext.getValue() instanceof Map m) {
-                while ((element = objectReader.readElement(buffer, stack)) != null) {
-                    m.put(element.getKey(), element.getValue());
+                while (objectReader.readElement(buffer, stack, m, null)) {
                 }
             } else if (readerContext.getValue() instanceof List l) {
-                while ((element = objectReader.readElement(buffer, stack)) != null) {
-                    l.add(element.getValue());
+                while (objectReader.readElement(buffer, stack, null, l)) {
                 }
-
             }
         }
 

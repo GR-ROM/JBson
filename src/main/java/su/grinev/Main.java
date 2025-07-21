@@ -46,8 +46,9 @@ public class Main {
                 .ver("0.1")
                 .type(VpnPacket.class.getTypeName())
                 .opts(Map.of(
-                        "srcCountry", "kz",
-                        "dstCounty", "ru"
+                        "sourceCountry", "kz",
+                        "destinationCounty", "ru",
+                        "longStringKeyAaBbCcDdEeFfGgHhIiKkLlMmNnOoPpRrSsTtQqXxYyZz", "value"
                         ))
                 .reserved(test)
                 .data(VpnPacket.builder()
@@ -60,7 +61,7 @@ public class Main {
         ByteBuffer b = null;
         List<Long> serializationTime = new ArrayList<>();
         List<Long> deserializationTime = new ArrayList<>();
-        for (int i = 0; i < 10000; i++) {
+        for (int i = 0; i < 100000; i++) {
 
             long delta = System.nanoTime();
 

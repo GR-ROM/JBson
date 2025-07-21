@@ -8,23 +8,22 @@ public class DynamicByteBuffer {
     private ByteBuffer buffer;
 
     public DynamicByteBuffer(int capacity) {
-        this.buffer = ByteBuffer.allocateDirect(capacity);
+        this.buffer = ByteBuffer.allocate(capacity);
         initBuffer();
     }
 
     public void ensureCapacity(int additionalCapacity) {
         if (buffer.remaining() < additionalCapacity) {
             ByteBuffer oldBuffer = buffer;
-            buffer = ByteBuffer.allocateDirect(Math.max(buffer.capacity() * 2, buffer.remaining() + additionalCapacity));
+            buffer = ByteBuffer.allocate(Math.max(buffer.capacity() * 2, buffer.remaining() + additionalCapacity));
             initBuffer();
             buffer.put(oldBuffer.flip());
         }
     }
 
-    public DynamicByteBuffer initBuffer() {
+    public void initBuffer() {
         buffer.order(ByteOrder.LITTLE_ENDIAN);
         buffer.clear();
-        return this;
     }
 
     public ByteBuffer getBuffer() {

@@ -1,21 +1,26 @@
 package su.grinev.bson;
 
-import java.util.LinkedList;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.Semaphore;
+
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 
 public class Pool<T> {
 
-    private final List<T> pool = new LinkedList<>();
+    private final List<T> pool;
     private final int initialSize;
     private final Supplier<T> supplier;
-    private final Semaphore semaphore;
+    private final AtomicInteger counter = new AtomicInteger(0);
+    private final int limit;
+    private volatile boolean isWaiting;
 
     public Pool(int initialSize, int limit, Supplier<T> supplier) {
         this.initialSize = initialSize;
         this.supplier = supplier;
-        this.semaphore = new Semaphore(limit);
+        this.limit = limit;
+        this.pool = new ArrayList<>(initialSize);
+        isWaiting = false;
         supply(initialSize, supplier);
     }
 
@@ -26,19 +31,33 @@ public class Pool<T> {
     }
 
     public T get() {
+        if (counter.get() >= limit) {
+            synchronized (pool) {
+                while (counter.get() >= limit) {
+                    try {
+                        isWaiting = true;
+                        pool.wait();
+                    } catch (InterruptedException e) {
+                        throw new RuntimeException(e);
+                    }
+                }
+            }
+        } else {
+            counter.incrementAndGet();
+        }
         if (pool.isEmpty()) {
             supply(initialSize, supplier);
         }
-        try {
-            semaphore.acquire();
-        } catch (InterruptedException e) {
-            throw new RuntimeException(e);
-        }
-        return pool.removeFirst();
+        return pool.removeLast();
     }
 
     public void release(T t) {
         pool.addLast(t);
-        semaphore.release();
+        if (counter.decrementAndGet() < limit && isWaiting) {
+            synchronized (pool) {
+                pool.notify();
+            }
+            isWaiting = false;
+        }
     }
 }

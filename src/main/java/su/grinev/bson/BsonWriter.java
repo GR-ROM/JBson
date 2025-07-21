@@ -17,13 +17,11 @@ public class BsonWriter {
     private boolean isNestedObjectPending;
 
     public ByteBuffer serialize(Map<String, Object> document) {
-        DynamicByteBuffer buffer = null;
+        DynamicByteBuffer buffer = bufferPool.get();
+        buffer.initBuffer();
 
         try {
             Deque<WriterContext> stack = new ArrayDeque<>(64);
-
-            buffer = bufferPool.get();
-            buffer.initBuffer();
 
             WriterContext writerContext = writerContextPool.get();
             stack.addLast(fillForDocument(writerContext, null, 0, document));
@@ -41,13 +39,7 @@ public class BsonWriter {
 
                 if (ctx.mapEntries != null) {
                     while (ctx.idx < ctx.mapEntries.size()) {
-                        writeElement(
-                                buffer,
-                                ctx.mapEntries.get(ctx.idx).getKey(),
-                                ctx.mapEntries.get(ctx.idx).getValue(),
-                                ctx,
-                                stack
-                        );
+                        writeElement(buffer, ctx.mapEntries.get(ctx.idx).getKey(), ctx.mapEntries.get(ctx.idx).getValue(), ctx, stack);
                         ctx.idx++;
                         if (isNestedObjectPending) {
                             break;
@@ -55,13 +47,7 @@ public class BsonWriter {
                     }
                 } else if (ctx.listEntries != null) {
                     while (ctx.idx < ctx.listEntries.size()) {
-                        writeElement(
-                                buffer,
-                                Integer.toString(ctx.idx),
-                                ctx.listEntries.get(ctx.idx),
-                                ctx,
-                                stack
-                        );
+                        writeElement(buffer, Integer.toString(ctx.idx), ctx.listEntries.get(ctx.idx), ctx, stack);
                         ctx.idx++;
                         if (isNestedObjectPending) {
                             break;
@@ -86,19 +72,13 @@ public class BsonWriter {
         }
     }
 
-    private void writeTerminator(DynamicByteBuffer buffer, WriterContext ctx) {
+    private static void writeTerminator(DynamicByteBuffer buffer, WriterContext ctx) {
         buffer.ensureCapacity(1);
         buffer.put((byte) 0x00);
         ctx.length += 1;
     }
 
-    private void writeElement(
-            DynamicByteBuffer buffer,
-            String key,
-            Object value,
-            WriterContext ctx,
-            Deque<WriterContext> stack
-    ) {
+    private void writeElement(DynamicByteBuffer buffer, String key, Object value, WriterContext ctx, Deque<WriterContext> stack) {
         int start = buffer.position();
         byte[] keyBytes = key.getBytes(StandardCharsets.UTF_8);
 
