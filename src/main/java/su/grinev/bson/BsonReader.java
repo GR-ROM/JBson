@@ -9,7 +9,7 @@ public class BsonReader {
     private final Pool<ReaderContext> contextPool;
 
     public BsonReader() {
-        contextPool = new Pool<>(10000, ReaderContext::new);
+        contextPool = new Pool<>(1000, 10000, ReaderContext::new);
         objectReader = new ObjectReader(contextPool);
     }
 

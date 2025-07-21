@@ -8,9 +8,9 @@ import java.nio.ByteBuffer;
 
 public class ObjectMapper {
     private final Binder binder = new Binder();
+    private final BsonWriter bsonWriter = new BsonWriter();
 
     public ByteBuffer serialize(Object o) {
-        BsonWriter bsonWriter = new BsonWriter();
         return bsonWriter.serialize(binder.unbind(o));
     }
 

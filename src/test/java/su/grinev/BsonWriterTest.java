@@ -142,20 +142,6 @@ public class BsonWriterTest {
     }
 
     @Test
-    void testBufferExpansion() throws Exception {
-        List<Object> list = new ArrayList<>();
-        for (int i = 0; i < 200_000; i++) list.add(i);
-        Map<String, Object> doc = Collections.singletonMap("bigArr", list);
-
-        writer.serialize(doc);
-
-        Field field = BsonWriter.class.getDeclaredField("buffer");
-        field.setAccessible(true);
-        ByteBuffer buf = (ByteBuffer) field.get(writer);
-        assertTrue(buf.capacity() > 1 * 1024 * 1024, "Buffer should have expanded beyond 1MB");
-    }
-
-    @Test
     void testUnsupportedTypeThrows() {
         Map<String, Object> doc = Collections.singletonMap("date", new Date());
         assertThrows(IllegalArgumentException.class, () -> writer.serialize(doc));

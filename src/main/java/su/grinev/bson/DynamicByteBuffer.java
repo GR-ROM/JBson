@@ -1,0 +1,97 @@
+package su.grinev.bson;
+
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+
+public class DynamicByteBuffer {
+
+    private ByteBuffer buffer;
+
+    public DynamicByteBuffer(int capacity) {
+        this.buffer = ByteBuffer.allocateDirect(capacity);
+        initBuffer();
+    }
+
+    public void ensureCapacity(int additionalCapacity) {
+        if (buffer.remaining() < additionalCapacity) {
+            ByteBuffer oldBuffer = buffer;
+            buffer = ByteBuffer.allocateDirect(Math.max(buffer.capacity() * 2, buffer.remaining() + additionalCapacity));
+            initBuffer();
+            buffer.put(oldBuffer.flip());
+        }
+    }
+
+    public DynamicByteBuffer initBuffer() {
+        buffer.order(ByteOrder.LITTLE_ENDIAN);
+        buffer.clear();
+        return this;
+    }
+
+    public ByteBuffer getBuffer() {
+        return buffer;
+    }
+
+    public DynamicByteBuffer position(int newPosition) {
+        buffer.position(newPosition);
+        return this;
+    }
+
+    public int position() {
+        return buffer.position();
+    }
+
+    public DynamicByteBuffer put(byte b) {
+        buffer.put(b);
+        return this;
+    }
+
+    public DynamicByteBuffer put(byte[] b) {
+        buffer.put(b);
+        return this;
+    }
+
+    public DynamicByteBuffer putInt(int i) {
+        buffer.putInt(i);
+        return this;
+    }
+
+    public DynamicByteBuffer putInt(int pos, int i) {
+        buffer.putInt(pos, i);
+        return this;
+    }
+
+    public DynamicByteBuffer putShort(short s) {
+        buffer.putShort(s);
+        return this;
+    }
+
+    public DynamicByteBuffer flip() {
+        buffer.flip();
+        return this;
+    }
+
+    public DynamicByteBuffer rewind() {
+        buffer.rewind();
+        return this;
+    }
+
+    public DynamicByteBuffer putLong(long l) {
+        buffer.putLong(l);
+        return this;
+    }
+
+    public DynamicByteBuffer putLong(int pos, long l) {
+        buffer.putLong(pos, l);
+        return this;
+    }
+
+    public DynamicByteBuffer putFloat(float f) {
+        buffer.putFloat(f);
+        return this;
+    }
+
+    public DynamicByteBuffer putDouble(double d) {
+        buffer.putDouble(d);
+        return this;
+    }
+}
