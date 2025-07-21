@@ -61,24 +61,21 @@ public class Main {
         ByteBuffer b = null;
         List<Long> serializationTime = new ArrayList<>();
         List<Long> deserializationTime = new ArrayList<>();
+        Map<String, Object> deserialized = Map.of();
+        Map<String, Object> documentMap = binder.unbind(request);
         for (int i = 0; i < 100000; i++) {
 
             long delta = System.nanoTime();
-
-            Map<String, Object> documentMap = binder.unbind(request);
             b = bsonWriter.serialize(documentMap);
-
             serializationTime.add((System.nanoTime() - delta) / 1000);
 
             delta = System.nanoTime();
-
-            Map<String, Object> deserialized = bsonReader.deserialize(b);
-            request1 = binder.bind(VpnRequest.class, deserialized);
-
+            deserialized = bsonReader.deserialize(b);
+            // request1 = binder.bind(VpnRequest.class, deserialized);
             deserializationTime.add((System.nanoTime() - delta) / 1000);
         }
         //System.out.println(Arrays.toString(b.array()));
-        System.out.println(request1);
+        System.out.println(deserialized);
 
         List<Long> sortedSerialization = serializationTime.stream().sorted().toList();
         List<Long> sortedDeserialization = deserializationTime.stream().sorted().toList();

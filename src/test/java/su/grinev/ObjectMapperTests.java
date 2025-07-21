@@ -22,12 +22,22 @@ public class ObjectMapperTests {
         }
 
         TestTest nested = new TestTest();
-        nested.setB(b1);
+        nested.setB(b2);
+        nested.setS("TestString");
+        nested.setD(0.111111111);
+        nested.setI(1111111111);
 
-        ByteBuffer b = objectMapper.serialize(nested);
+        TestTest testTest = new TestTest();
+        testTest.setB(b1);
+        testTest.setS("TestString");
+        testTest.setD(0.111111111);
+        testTest.setI(1111111111);
+        testTest.setNestedTestTest(nested);
+
+        ByteBuffer b = objectMapper.serialize(testTest);
 
         TestTest deserialized = objectMapper.deserialize(b, TestTest.class);
 
-        assertEquals(nested, deserialized);
+        assertEquals(testTest, deserialized);
     }
 }

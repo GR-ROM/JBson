@@ -5,23 +5,27 @@ import su.grinev.bson.BsonWriter;
 
 import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
+import java.util.Map;
 
 public class ObjectMapper {
     private final Binder binder = new Binder();
     private final BsonWriter bsonWriter = new BsonWriter();
+    private final BsonReader bsonReader = new BsonReader();
 
     public ByteBuffer serialize(Object o) {
-        return bsonWriter.serialize(binder.unbind(o));
+        Map<String, Object> map = binder.unbind(o);
+
+        return bsonWriter.serialize(map);
     }
 
     public ByteArrayOutputStream serialize(ByteArrayOutputStream outputStream, Object o) {
-        BsonWriter bsonWriter = new BsonWriter();
         return outputStream;
     }
 
     public <T> T deserialize(ByteBuffer buffer, Class<T> tClass) {
-        BsonReader bsonReader = new BsonReader();
-        return binder.bind(tClass, bsonReader.deserialize(buffer));
+        Map<String, Object> map = bsonReader.deserialize(buffer);
+
+        return binder.bind(tClass, map);
     }
 
 }

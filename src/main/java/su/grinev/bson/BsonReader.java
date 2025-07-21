@@ -5,12 +5,8 @@ import java.nio.ByteOrder;
 import java.util.*;
 
 public class BsonReader {
-    private final ObjectReader objectReader;
     private final Pool<ReaderContext> contextPool = new Pool<>(1000, 10000, ReaderContext::new);
-
-    public BsonReader() {
-        objectReader = new ObjectReader(contextPool);
-    }
+    private final ObjectReader objectReader = new ObjectReader(contextPool);
 
     public Map<String, Object> deserialize(ByteBuffer buffer) {
         Map<String, Object> rootDocument = new HashMap<>();
