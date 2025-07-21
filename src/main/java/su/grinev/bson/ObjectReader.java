@@ -62,15 +62,8 @@ public final class ObjectReader {
     }
 
     private String readString(ByteBuffer buffer) {
-//        if (isKey) {
-//            start = buffer.position();
-//            while (buffer.get() != 0) {}
-//            int end = buffer.position();
-//            len = end - start;
-//        } else {
-            int len = buffer.getInt();
-            int start = buffer.position();
-//        }
+        int len = buffer.getInt();
+        int start = buffer.position();
 
         buffer.position(buffer.position() + len);
         return new String(buffer.array(), start, len - 1, StandardCharsets.UTF_8);

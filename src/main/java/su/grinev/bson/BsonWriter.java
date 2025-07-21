@@ -38,20 +38,14 @@ public class BsonWriter {
                 isNestedObjectPending = false;
 
                 if (ctx.mapEntries != null) {
-                    while (ctx.idx < ctx.mapEntries.size()) {
+                    while (ctx.idx < ctx.mapEntries.size() && !isNestedObjectPending) {
                         writeElement(buffer, ctx.mapEntries.get(ctx.idx).getKey(), ctx.mapEntries.get(ctx.idx).getValue(), ctx, stack);
                         ctx.idx++;
-                        if (isNestedObjectPending) {
-                            break;
-                        }
                     }
                 } else if (ctx.listEntries != null) {
-                    while (ctx.idx < ctx.listEntries.size()) {
+                    while (ctx.idx < ctx.listEntries.size() && !isNestedObjectPending) {
                         writeElement(buffer, Integer.toString(ctx.idx), ctx.listEntries.get(ctx.idx), ctx, stack);
                         ctx.idx++;
-                        if (isNestedObjectPending) {
-                            break;
-                        }
                     }
                 }
 
