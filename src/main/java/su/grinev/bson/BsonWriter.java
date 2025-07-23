@@ -1,9 +1,11 @@
 package su.grinev.bson;
 
+import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 
+import static su.grinev.bson.Utility.encodeDecimal128;
 import static su.grinev.bson.WriterContext.fillForArray;
 import static su.grinev.bson.WriterContext.fillForDocument;
 
@@ -106,6 +108,16 @@ public class BsonWriter {
 
                 writeCString(buffer, keyBytes);
                 buffer.putDouble(d);
+            }
+            case BigDecimal bigDecimal -> {
+                buffer.ensureCapacity(1 + keyBytes.length + 1);
+                buffer.put((byte) 0x13);
+                writeCString(buffer, keyBytes);
+
+                long[] l = encodeDecimal128(bigDecimal);
+
+                buffer.putLong(l[0]);
+                buffer.putLong(l[1]);
             }
             case Boolean b -> {
                 buffer.ensureCapacity( 1 + keyBytes.length + 1 + 1);

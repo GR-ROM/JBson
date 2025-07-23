@@ -8,6 +8,9 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.*;
 
+import static su.grinev.bson.Utility.decodeDecimal128;
+import static su.grinev.bson.Utility.findNullByteSimdLong;
+
 public final class ObjectReader {
     private final Pool<ReaderContext> contextPool;
 
@@ -65,7 +68,7 @@ public final class ObjectReader {
         int len = buffer.getInt();
         int start = buffer.position();
 
-        buffer.position(buffer.position() + len);
+        buffer.position(start + len);
         return new String(buffer.array(), start, len - 1, StandardCharsets.UTF_8);
     }
 
@@ -76,42 +79,6 @@ public final class ObjectReader {
 
         buffer.position(buffer.position() + len + 1);
         return new String(buffer.array(), start, len, StandardCharsets.UTF_8);
-    }
-
-    public int findNullByteSimdLong(ByteBuffer buffer) {
-        int start = buffer.position();
-        int limit = buffer.limit();
-        int i = start;
-
-        while (i + Long.BYTES <= limit) {
-            long word = buffer.getLong(i);
-            if (hasZeroByte(word)) {
-                return i + firstZeroByteIndex(word);
-            }
-            i += Long.BYTES;
-        }
-
-        while (i < limit) {
-            if (buffer.get(i) == 0) {
-                return i;
-            }
-            i++;
-        }
-
-        return i;
-    }
-
-    private static boolean hasZeroByte(long v) {
-        return ((v - 0x0101010101010101L) & ~v & 0x8080808080808080L) != 0;
-    }
-
-    private static int firstZeroByteIndex(long v) {
-        for (int i = 0; i < 8; i++) {
-            if (((v >>> (i * 8)) & 0xFF) == 0) {
-                return i;
-            }
-        }
-        return -1;
     }
 
     private byte[] readBinary(ByteBuffer buffer) {
@@ -149,8 +116,8 @@ public final class ObjectReader {
     }
 
     private static BigDecimal readDecimal128(ByteBuffer buffer) {
-        byte[] bytes = new byte[16];
-        buffer.get(bytes);
-        return new BigDecimal("0");
+        long low = buffer.getLong();
+        long high = buffer.getLong();
+        return decodeDecimal128(low, high);
     }
 }

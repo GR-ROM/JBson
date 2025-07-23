@@ -1,7 +1,30 @@
 package su.grinev.bson;
 
+import java.util.*;
+
 public class Document {
 
+    private final Map<String, Object> documentMap;
 
+    public Document(Map<String, Object> documentMap) {
+        this.documentMap = documentMap;
+    }
+
+    public Object get(String key) {
+        List<String> path = Arrays.stream(key.split("\\.")).toList();
+
+        Iterator<String> i = path.iterator();
+        Map<String, Object> map = documentMap;
+        while (i.hasNext()) {
+            Object o = map.get(i.next());
+            if (i.hasNext()) {
+                map = (Map<String, Object>) o;
+            } else {
+                return o;
+            }
+        }
+
+        return null;
+    }
 
 }

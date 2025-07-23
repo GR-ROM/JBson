@@ -5,6 +5,7 @@ import annotation.BsonType;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
+import java.math.BigDecimal;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -93,7 +94,7 @@ public class Binder {
                         Map<String, Object> nestedDocument = new LinkedHashMap<>();
                         currentDocument.put(field.getKey(), nestedDocument);
                         stack.addLast(new BinderContext(field.getValue().get(ctx.o), nestedDocument));
-                    } else if (field.getValue().isAnnotationPresent(BsonType.class)) {
+                    } else if (field.getValue().isAnnotationPresent(BsonType.class) && field.getValue().get(ctx.o) != null) {
                         Map<String, Object> nestedDocument = new LinkedHashMap<>();
                         String discriminator = field.getValue().getAnnotation(BsonType.class).discriminator();
                         currentDocument.put(discriminator, field.getValue().get(ctx.o).getClass().getName());
@@ -130,6 +131,7 @@ public class Binder {
 
     public static boolean isPrimitiveOrWrapperOrString(Class<?> type) {
         return type.isPrimitive()
+                || type == BigDecimal.class
                 || type == Boolean.class
                 || type == Byte.class
                 || type == Short.class

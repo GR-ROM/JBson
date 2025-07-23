@@ -2,10 +2,12 @@ package su.grinev;
 
 import su.grinev.bson.BsonReader;
 import su.grinev.bson.BsonWriter;
+import su.grinev.bson.Document;
 import su.grinev.test.VpnPacket;
 import su.grinev.test.VpnRequest;
 
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.file.Files;
@@ -52,13 +54,12 @@ public class Main {
                         ))
                 .reserved(test)
                 .data(VpnPacket.builder()
+                        .bigDecimal(BigDecimal.ONE)
                         .encoding("RAW")
                         .packet(packet)
                         .build())
                 .build();
 
-        VpnRequest<VpnPacket> request1 = null;
-        ByteBuffer b = null;
         List<Long> serializationTime = new ArrayList<>();
         List<Long> deserializationTime = new ArrayList<>();
         Map<String, Object> deserialized = Map.of();
@@ -66,13 +67,16 @@ public class Main {
         for (int i = 0; i < 100000; i++) {
 
             long delta = System.nanoTime();
-            b = bsonWriter.serialize(documentMap);
+            ByteBuffer b = bsonWriter.serialize(documentMap);
             serializationTime.add((System.nanoTime() - delta) / 1000);
 
             delta = System.nanoTime();
             deserialized = bsonReader.deserialize(b);
             // request1 = binder.bind(VpnRequest.class, deserialized);
             deserializationTime.add((System.nanoTime() - delta) / 1000);
+
+            Document document = new Document(deserialized);
+            byte[] p = (byte[]) document.get("data.packet");
         }
         //System.out.println(Arrays.toString(b.array()));
         System.out.println(deserialized);
