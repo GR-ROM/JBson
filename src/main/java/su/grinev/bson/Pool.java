@@ -3,6 +3,7 @@ package su.grinev.bson;
 import java.util.ArrayList;
 import java.util.List;
 
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 
@@ -13,14 +14,14 @@ public class Pool<T> {
     private final Supplier<T> supplier;
     private final AtomicInteger counter = new AtomicInteger(0);
     private final int limit;
-    private volatile boolean isWaiting;
+    private final AtomicBoolean isWaiting;
 
     public Pool(int initialSize, int limit, Supplier<T> supplier) {
         this.initialSize = initialSize;
         this.supplier = supplier;
         this.limit = limit;
         this.pool = new ArrayList<>(initialSize);
-        isWaiting = false;
+        isWaiting = new AtomicBoolean(false);
         supply(initialSize, supplier);
     }
 
@@ -35,7 +36,7 @@ public class Pool<T> {
             synchronized (pool) {
                 while (counter.get() >= limit) {
                     try {
-                        isWaiting = true;
+                        isWaiting.set(true);
                         pool.wait();
                     } catch (InterruptedException e) {
                         throw new RuntimeException(e);
@@ -53,11 +54,11 @@ public class Pool<T> {
 
     public void release(T t) {
         pool.addLast(t);
-        if (counter.decrementAndGet() < limit && isWaiting) {
+        if (counter.decrementAndGet() < limit && isWaiting.get()) {
             synchronized (pool) {
                 pool.notify();
             }
-            isWaiting = false;
+            isWaiting.set(false);
         }
     }
 }

@@ -25,7 +25,7 @@ public class Main {
 
         ByteBuffer buffer = ByteBuffer.allocateDirect(data.length);
 
-        buffer.order(ByteOrder.LITTLE_ENDIAN); // важно для BSON!
+        buffer.order(ByteOrder.LITTLE_ENDIAN);
         buffer.put(data);
         return buffer;
     }

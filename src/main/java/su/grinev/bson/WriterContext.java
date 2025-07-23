@@ -10,7 +10,7 @@ import java.util.Map;
 @Setter
 @Accessors(chain = true)
 @NoArgsConstructor
-public class WriterContext {
+public final class WriterContext {
     WriterContext parent;
     int idx;
     int length = 0;
