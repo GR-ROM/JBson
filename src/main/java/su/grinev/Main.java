@@ -2,6 +2,7 @@ package su.grinev;
 
 import su.grinev.bson.BsonDeserializer;
 import su.grinev.bson.BsonWriter;
+import su.grinev.bson.Document;
 import su.grinev.test.VpnPacket;
 import su.grinev.test.VpnRequest;
 
@@ -61,7 +62,7 @@ public class Main {
 
         List<Long> serializationTime = new ArrayList<>();
         List<Long> deserializationTime = new ArrayList<>();
-        Map<String, Object> deserialized = Map.of();
+        Document deserialized = new Document(Map.of(), 0);
 
         for (int i = 0; i < 100000; i++) {
 

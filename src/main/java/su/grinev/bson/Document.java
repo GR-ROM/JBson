@@ -1,13 +1,18 @@
 package su.grinev.bson;
 
+import lombok.Getter;
+
 import java.util.*;
 
+@Getter
 public class Document {
 
     private final Map<String, Object> documentMap;
+    private final int length;
 
-    public Document(Map<String, Object> documentMap) {
+    public Document(Map<String, Object> documentMap, int length) {
         this.documentMap = documentMap;
+        this.length = length;
     }
 
     public Object get(String key) {

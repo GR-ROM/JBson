@@ -1,6 +1,7 @@
 package su.grinev;
 
 import annotation.BsonType;
+import su.grinev.bson.Document;
 
 import java.lang.reflect.*;
 import java.math.BigDecimal;
@@ -12,10 +13,10 @@ public class Binder {
 
     private static final Map<Class<?>, Map<String, Field>> fieldCache = new ConcurrentHashMap<>();
 
-    public <T> T bind(Class<T> tClass, Map<String, Object> document) {
+    public <T> T bind(Class<T> tClass, Document document) {
         Object rootObject = instantiate(tClass);
         Deque<BinderContext> stack = new LinkedList<>();
-        stack.addLast(new BinderContext(rootObject, document, tClass));
+        stack.addLast(new BinderContext(rootObject, document.getDocumentMap(), tClass));
 
         while (!stack.isEmpty()) {
             BinderContext ctx = stack.removeLast();

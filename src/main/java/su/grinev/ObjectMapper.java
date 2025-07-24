@@ -2,6 +2,7 @@ package su.grinev;
 
 import su.grinev.bson.BsonDeserializer;
 import su.grinev.bson.BsonWriter;
+import su.grinev.bson.Document;
 
 import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
@@ -14,7 +15,6 @@ public class ObjectMapper {
 
     public ByteBuffer serialize(Object o) {
         Map<String, Object> map = binder.unbind(o);
-
         return bsonWriter.serialize(map);
     }
 
@@ -23,9 +23,8 @@ public class ObjectMapper {
     }
 
     public <T> T deserialize(ByteBuffer buffer, Class<T> tClass) {
-        Map<String, Object> map = bsonDeserializer.deserialize(buffer);
-
-        return binder.bind(tClass, map);
+        Document document = bsonDeserializer.deserialize(buffer);
+        return binder.bind(tClass, document);
     }
 
 }

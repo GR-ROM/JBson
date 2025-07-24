@@ -9,7 +9,7 @@ import java.util.*;
 public class BsonDeserializer {
     private final Pool<ReaderContext> contextPool = new Pool<>(1000, 10000, ReaderContext::new);
 
-    public Map<String, Object> deserialize(ByteBuffer buffer) {
+    public Document deserialize(ByteBuffer buffer) {
         buffer.order(ByteOrder.LITTLE_ENDIAN);
 
         Map<String, Object> rootDocument = new HashMap<>();
@@ -19,12 +19,14 @@ public class BsonDeserializer {
         ReaderContext readerContext = contextPool.get();
         stack.addLast(readerContext.setPos(bsonByteBufferReader.position()).setValue(rootDocument));
 
+        int len = bsonByteBufferReader.readInt();
+        bsonByteBufferReader.position(bsonByteBufferReader.position() - 4);
+
         while (!stack.isEmpty()) {
             readerContext = stack.removeLast();
 
             bsonByteBufferReader.position(readerContext.getPos());
-            contextPool.release(readerContext);
-            int len = bsonByteBufferReader.readInt();
+            bsonByteBufferReader.readInt();
 
             if (readerContext.getValue() instanceof Map m) {
                 while (readElement(bsonByteBufferReader, stack, m, null)) {
@@ -33,12 +35,13 @@ public class BsonDeserializer {
                 while (readElement(bsonByteBufferReader, stack, null, l)) {
                 }
             }
+            contextPool.release(readerContext);
         }
 
-        return rootDocument;
+        return new Document(rootDocument, len);
     }
 
-    public Map<String, Object> deserialize(InputStream inputStream) throws IOException {
+    public Document deserialize(InputStream inputStream) throws IOException {
         DynamicByteBuffer byteBuffer = new DynamicByteBuffer(16 * 1024);
         byte[] chunk = new byte[8192];
         int bytesRead;
