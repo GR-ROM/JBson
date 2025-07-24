@@ -6,7 +6,6 @@ import su.grinev.bson.Document;
 
 import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
-import java.util.Map;
 
 public class ObjectMapper {
     private final Binder binder = new Binder();
@@ -14,8 +13,8 @@ public class ObjectMapper {
     private final BsonDeserializer bsonDeserializer = new BsonDeserializer();
 
     public ByteBuffer serialize(Object o) {
-        Map<String, Object> map = binder.unbind(o);
-        return bsonWriter.serialize(map);
+        Document document = binder.unbind(o);
+        return bsonWriter.serialize(document);
     }
 
     public ByteArrayOutputStream serialize(ByteArrayOutputStream outputStream, Object o) {

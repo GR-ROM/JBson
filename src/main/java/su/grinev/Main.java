@@ -6,6 +6,7 @@ import su.grinev.bson.Document;
 import su.grinev.test.VpnPacket;
 import su.grinev.test.VpnRequest;
 
+import javax.print.Doc;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
@@ -66,7 +67,7 @@ public class Main {
 
         for (int i = 0; i < 100000; i++) {
 
-            Map<String, Object> documentMap = binder.unbind(request);
+            Document documentMap = binder.unbind(request);
             long delta = System.nanoTime();
             ByteBuffer b = bsonWriter.serialize(documentMap);
             serializationTime.add((System.nanoTime() - delta) / 1000);

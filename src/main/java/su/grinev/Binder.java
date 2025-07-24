@@ -86,7 +86,7 @@ public class Binder {
         return (T) rootObject;
     }
 
-    public Map<String, Object> unbind(Object o) {
+    public Document unbind(Object o) {
         Map<String, Object> rootDocument = new HashMap<>();
         Deque<BinderContext> stack = new LinkedList<>();
         stack.addLast(new BinderContext(o, rootDocument, o.getClass()));
@@ -141,7 +141,7 @@ public class Binder {
             }
         }
 
-        return rootDocument;
+        return new Document(rootDocument, 0);
     }
 
     private Object instantiate(Class<?> clazz) {

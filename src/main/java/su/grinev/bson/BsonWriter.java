@@ -19,14 +19,14 @@ public class BsonWriter {
     private final Pool<WriterContext> writerContextPool = new Pool<>(CONCURRENCY_LEVEL * INITIAL_POOL_SIZE, CONCURRENCY_LEVEL * MAX_POOL_SIZE, WriterContext::new);
     private boolean isNestedObjectPending;
 
-    public ByteBuffer serialize(Map<String, Object> document) {
+    public ByteBuffer serialize(Document document) {
         DynamicByteBuffer buffer = bufferPool.get();
         buffer.initBuffer();
 
         try {
             Deque<WriterContext> stack = new ArrayDeque<>(64);
             WriterContext writerContext = writerContextPool.get();
-            stack.addLast(fillForDocument(writerContext, null, 0, document));
+            stack.addLast(fillForDocument(writerContext, null, 0, document.getDocumentMap()));
 
             while (!stack.isEmpty()) {
                 WriterContext ctx = stack.getLast();
