@@ -16,7 +16,7 @@ public class BsonWriterTestTest {
 
     @BeforeEach
     void setUp() {
-        writer = new BsonWriter();
+        writer = new BsonWriter(10, 1000, 10000);
     }
 
     private byte[] toByteArray(ByteBuffer buffer) {
@@ -33,7 +33,7 @@ public class BsonWriterTestTest {
         ByteBuffer buffer = writer.serialize(new Document(doc));
         byte[] bytes = toByteArray(buffer);
         RawBsonDocument raw = new RawBsonDocument(bytes);
-        assertTrue(raw.keySet().isEmpty(), "Document should be empty");
+        assertTrue(raw.isEmpty(), "Document should be empty");
     }
 
     @Test
