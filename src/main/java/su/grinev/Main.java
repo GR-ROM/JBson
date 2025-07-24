@@ -1,8 +1,7 @@
 package su.grinev;
 
-import su.grinev.bson.BsonReader;
+import su.grinev.bson.BsonDeserializer;
 import su.grinev.bson.BsonWriter;
-import su.grinev.bson.Document;
 import su.grinev.test.VpnPacket;
 import su.grinev.test.VpnRequest;
 
@@ -30,10 +29,10 @@ public class Main {
         return buffer;
     }
 
-    public static void main(String[] args) throws IOException {
+    public static void main(String[] args) {
         Binder binder = new Binder();
         BsonWriter bsonWriter = new BsonWriter();
-        BsonReader bsonReader = new BsonReader();
+        BsonDeserializer bsonDeserializer = new BsonDeserializer();
 
         byte[] packet = new byte[128 * 1024];
 
@@ -63,20 +62,18 @@ public class Main {
         List<Long> serializationTime = new ArrayList<>();
         List<Long> deserializationTime = new ArrayList<>();
         Map<String, Object> deserialized = Map.of();
-        Map<String, Object> documentMap = binder.unbind(request);
+
         for (int i = 0; i < 100000; i++) {
 
+            Map<String, Object> documentMap = binder.unbind(request);
             long delta = System.nanoTime();
             ByteBuffer b = bsonWriter.serialize(documentMap);
             serializationTime.add((System.nanoTime() - delta) / 1000);
 
             delta = System.nanoTime();
-            deserialized = bsonReader.deserialize(b);
-            // request1 = binder.bind(VpnRequest.class, deserialized);
+            deserialized = bsonDeserializer.deserialize(b);
             deserializationTime.add((System.nanoTime() - delta) / 1000);
-
-            Document document = new Document(deserialized);
-            byte[] p = (byte[]) document.get("data.packet");
+            Object request1 = binder.bind(VpnRequest.class, deserialized);
         }
         //System.out.println(Arrays.toString(b.array()));
         System.out.println(deserialized);

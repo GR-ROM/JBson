@@ -1,6 +1,6 @@
 package su.grinev;
 
-import su.grinev.bson.BsonReader;
+import su.grinev.bson.BsonDeserializer;
 import su.grinev.bson.BsonWriter;
 
 import java.io.ByteArrayOutputStream;
@@ -10,7 +10,7 @@ import java.util.Map;
 public class ObjectMapper {
     private final Binder binder = new Binder();
     private final BsonWriter bsonWriter = new BsonWriter();
-    private final BsonReader bsonReader = new BsonReader();
+    private final BsonDeserializer bsonDeserializer = new BsonDeserializer();
 
     public ByteBuffer serialize(Object o) {
         Map<String, Object> map = binder.unbind(o);
@@ -23,7 +23,7 @@ public class ObjectMapper {
     }
 
     public <T> T deserialize(ByteBuffer buffer, Class<T> tClass) {
-        Map<String, Object> map = bsonReader.deserialize(buffer);
+        Map<String, Object> map = bsonDeserializer.deserialize(buffer);
 
         return binder.bind(tClass, map);
     }

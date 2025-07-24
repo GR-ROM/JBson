@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 import static su.grinev.bson.Utility.encodeDecimal128;
 import static su.grinev.bson.WriterContext.fillForArray;
@@ -24,7 +25,6 @@ public class BsonWriter {
 
         try {
             Deque<WriterContext> stack = new ArrayDeque<>(64);
-
             WriterContext writerContext = writerContextPool.get();
             stack.addLast(fillForDocument(writerContext, null, 0, document));
 
