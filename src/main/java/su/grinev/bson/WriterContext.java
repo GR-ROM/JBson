@@ -15,6 +15,7 @@ public final class WriterContext {
     int idx;
     int length = 0;
     int lengthPos = 0;
+    boolean isNestedObjectPending;
     List<Map.Entry<String, Object>> mapEntries;
     List<Object> listEntries;
 
@@ -25,6 +26,7 @@ public final class WriterContext {
             Map<String, Object> value
             ) {
         return writerContext
+                .setNestedObjectPending(false)
                 .setParent(parent)
                 .setLength(0)
                 .setLengthPos(lengthPos)
@@ -40,6 +42,7 @@ public final class WriterContext {
             List<Object> value
     ) {
         return writerContext
+                .setNestedObjectPending(false)
                 .setParent(parent)
                 .setLength(0)
                 .setLengthPos(lengthPos)

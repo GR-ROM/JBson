@@ -16,7 +16,6 @@ import static su.grinev.bson.WriterContext.fillForDocument;
 
 public class BsonWriter {
     private final Pool<WriterContext> writerContextPool;
-    private boolean isNestedObjectPending;
 
     public BsonWriter(
             int concurrencyLevel,
@@ -47,21 +46,19 @@ public class BsonWriter {
                 buffer.position(buffer.position() + 4); // reserve space for length
             }
 
-            isNestedObjectPending = false;
-
             if (ctx.mapEntries != null) {
-                while (ctx.idx < ctx.mapEntries.size() && !isNestedObjectPending) {
-                    writeElement(buffer, ctx.mapEntries.get(ctx.idx).getKey(), ctx.mapEntries.get(ctx.idx).getValue(), ctx, stack);
+                while (ctx.idx < ctx.mapEntries.size() && !ctx.isNestedObjectPending) {
+                    writeElement(buffer, ctx, stack);
                     ctx.idx++;
                 }
             } else if (ctx.listEntries != null) {
-                while (ctx.idx < ctx.listEntries.size() && !isNestedObjectPending) {
-                    writeElement(buffer, Integer.toString(ctx.idx), ctx.listEntries.get(ctx.idx), ctx, stack);
+                while (ctx.idx < ctx.listEntries.size() && !ctx.isNestedObjectPending) {
+                    writeElement(buffer, ctx, stack);
                     ctx.idx++;
                 }
             }
 
-            if (!isNestedObjectPending) {
+            if (!ctx.isNestedObjectPending) {
                 writeTerminator(buffer, ctx);
                 buffer.putInt(ctx.lengthPos, ctx.length);
                 if (ctx.parent != null) {
@@ -70,6 +67,7 @@ public class BsonWriter {
                 stack.removeLast();
                 writerContextPool.release(ctx);
             }
+            ctx.setNestedObjectPending(false);
         }
 
         return buffer.flip().getBuffer();
@@ -94,8 +92,18 @@ public class BsonWriter {
         ctx.length += 1;
     }
 
-    private void writeElement(DynamicByteBuffer buffer, String key, Object value, WriterContext ctx, Deque<WriterContext> stack) {
+    private void writeElement(DynamicByteBuffer buffer, WriterContext ctx, Deque<WriterContext> stack) {
         int start = buffer.position();
+        String key;
+        Object value;
+
+        if (ctx.mapEntries != null) {
+            key = ctx.mapEntries.get(ctx.idx).getKey();
+            value = ctx.mapEntries.get(ctx.idx).getValue();
+        } else {
+            key = Integer.toString(ctx.idx);
+            value = ctx.listEntries.get(ctx.idx);
+        }
         byte[] keyBytes = key.getBytes(StandardCharsets.UTF_8);
 
         switch (value) {
@@ -169,7 +177,7 @@ public class BsonWriter {
 
                 WriterContext writerContext = writerContextPool.get();
                 stack.addLast(fillForDocument(writerContext, ctx, buffer.position(), map));
-                isNestedObjectPending = true;
+                ctx.setNestedObjectPending(true);
             }
             case List list -> {
                 buffer.ensureCapacity(1 + keyBytes.length + 1);
@@ -179,7 +187,7 @@ public class BsonWriter {
                 WriterContext writerContext = writerContextPool.get();
 
                 stack.addLast(fillForArray(writerContext, ctx, buffer.position(), list));
-                isNestedObjectPending = true;
+                ctx.setNestedObjectPending(true);
             }
             default -> throw new IllegalArgumentException("Unsupported type: " + value.getClass());
         }

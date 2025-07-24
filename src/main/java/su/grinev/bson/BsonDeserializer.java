@@ -25,32 +25,41 @@ public class BsonDeserializer {
         buffer.order(ByteOrder.LITTLE_ENDIAN);
 
         Map<String, Object> rootDocument = new HashMap<>();
-        BsonReader bsonByteBufferReader = new BsonByteBufferReader(buffer);
+        BsonReader bsonReader = new BsonByteBufferReader(buffer);
         Deque<ReaderContext> stack = new ArrayDeque<>(64);
 
-        ReaderContext readerContext = contextPool.get();
-        stack.addLast(readerContext.setPos(bsonByteBufferReader.position()).setValue(rootDocument));
-
-        int len = bsonByteBufferReader.readInt();
-        bsonByteBufferReader.position(bsonByteBufferReader.position() - 4);
+        ReaderContext ctx = contextPool.get()
+                .setNestedObjectPending(false)
+                .setPos(bsonReader.position())
+                .setValue(rootDocument);
+        stack.addLast(ctx);
 
         while (!stack.isEmpty()) {
-            readerContext = stack.removeLast();
+            ctx = stack.getLast();
 
-            bsonByteBufferReader.position(readerContext.getPos());
-            bsonByteBufferReader.readInt();
-
-            if (readerContext.getValue() instanceof Map m) {
-                while (readElement(bsonByteBufferReader, stack, m, null)) {
+            if (ctx.getValue() instanceof Map m) {
+                if (m.isEmpty()) {
+                    bsonReader.readInt();
                 }
-            } else if (readerContext.getValue() instanceof List l) {
-                while (readElement(bsonByteBufferReader, stack, null, l)) {
+                while (readElement(bsonReader, ctx, stack, m, null) && !ctx.isNestedObjectPending()) {
+                }
+            } else if (ctx.getValue() instanceof List l) {
+                if (l.isEmpty()) {
+                    bsonReader.readInt();
+                }
+                while (readElement(bsonReader, ctx, stack, null, l) && !ctx.isNestedObjectPending()) {
                 }
             }
-            contextPool.release(readerContext);
+
+            if (!ctx.isNestedObjectPending()) {
+                stack.removeLast();
+                contextPool.release(ctx);
+            } else {
+                ctx.setNestedObjectPending(false);
+            }
         }
 
-        return new Document(rootDocument, len);
+        return new Document(rootDocument);
     }
 
     public Document deserialize(InputStream inputStream) {
@@ -69,7 +78,7 @@ public class BsonDeserializer {
         return deserialize(byteBuffer.getBuffer());
     }
 
-    private boolean readElement(BsonReader objectReader, Deque<ReaderContext> stack, Map<String, Object> map, List<Object> list) {
+    private boolean readElement(BsonReader objectReader, ReaderContext ctx, Deque<ReaderContext> stack, Map<String, Object> map, List<Object> list) {
         Object value;
 
         int type = objectReader.readByte();
@@ -83,18 +92,22 @@ public class BsonDeserializer {
             case 0x01 -> value = objectReader.readDouble();
             case 0x02 -> value = objectReader.readString(); // UTF-8 String
             case 0x03 -> { // Embedded document
-                int length = objectReader.readInt();
                 value = new HashMap<>();
-                ReaderContext readerContext = contextPool.get().setPos(objectReader.position() - 4).setValue(value);
+                ReaderContext readerContext = contextPool.get()
+                        .setNestedObjectPending(false)
+                        .setPos(objectReader.position() - 4)
+                        .setValue(value);
                 stack.add(readerContext);
-                objectReader.position(objectReader.position() + length - 4);
+                ctx.setNestedObjectPending(true);
             }
             case 0x04 -> { // Array
-                int length = objectReader.readInt();
                 value = new ArrayList<>();
-                ReaderContext readerContext = contextPool.get().setPos(objectReader.position() - 4).setValue(value);
+                ReaderContext readerContext = contextPool.get()
+                        .setNestedObjectPending(false)
+                        .setPos(objectReader.position() - 4)
+                        .setValue(value);
                 stack.add(readerContext);
-                objectReader.position(objectReader.position() + length - 4);
+                ctx.setNestedObjectPending(true);
             }
             case 0x05 -> value = objectReader.readBinary();
             case 0x07 -> value = objectReader.readObjectId();
