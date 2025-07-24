@@ -1,70 +1,90 @@
 package su.grinev.bson;
 
+import java.io.IOException;
+import java.io.OutputStream;
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
-import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.List;
+import java.util.Map;
 
 import static su.grinev.bson.Utility.encodeDecimal128;
 import static su.grinev.bson.WriterContext.fillForArray;
 import static su.grinev.bson.WriterContext.fillForDocument;
 
 public class BsonWriter {
-    public static final int CONCURRENCY_LEVEL = 1000;
-    public static final int INITIAL_POOL_SIZE = 1000;
-    public static final int MAX_POOL_SIZE = 100000;
-    private static final int INITIAL_BUFFER_SIZE = 64 * 1024;
-    private final Pool<DynamicByteBuffer> bufferPool = new Pool<>(CONCURRENCY_LEVEL, CONCURRENCY_LEVEL, () -> new DynamicByteBuffer(INITIAL_BUFFER_SIZE));
-    private final Pool<WriterContext> writerContextPool = new Pool<>(CONCURRENCY_LEVEL * INITIAL_POOL_SIZE, CONCURRENCY_LEVEL * MAX_POOL_SIZE, WriterContext::new);
+    private final Pool<WriterContext> writerContextPool;
     private boolean isNestedObjectPending;
 
+    public BsonWriter(
+            int concurrencyLevel,
+            int initialContextStackPoolSize,
+            int maxContextStackPoolSize
+    ) {
+        writerContextPool = new Pool<>(
+                concurrencyLevel * initialContextStackPoolSize,
+                concurrencyLevel * maxContextStackPoolSize,
+                WriterContext::new
+        );
+    }
+
     public ByteBuffer serialize(Document document) {
-        DynamicByteBuffer buffer = bufferPool.get();
+        DynamicByteBuffer buffer = new DynamicByteBuffer(64 * 1024);
         buffer.initBuffer();
 
-        try {
-            Deque<WriterContext> stack = new ArrayDeque<>(64);
-            WriterContext writerContext = writerContextPool.get();
-            stack.addLast(fillForDocument(writerContext, null, 0, document.getDocumentMap()));
+        Deque<WriterContext> stack = new ArrayDeque<>(64);
+        WriterContext writerContext = writerContextPool.get();
+        stack.addLast(fillForDocument(writerContext, null, 0, document.getDocumentMap()));
 
-            while (!stack.isEmpty()) {
-                WriterContext ctx = stack.getLast();
+        while (!stack.isEmpty()) {
+            WriterContext ctx = stack.getLast();
 
-                if (ctx.idx == 0) {
-                    buffer.ensureCapacity(4);
-                    ctx.length += 4;
-                    buffer.position(buffer.position() + 4); // reserve space for length
+            if (ctx.idx == 0) {
+                buffer.ensureCapacity(4);
+                ctx.length += 4;
+                buffer.position(buffer.position() + 4); // reserve space for length
+            }
+
+            isNestedObjectPending = false;
+
+            if (ctx.mapEntries != null) {
+                while (ctx.idx < ctx.mapEntries.size() && !isNestedObjectPending) {
+                    writeElement(buffer, ctx.mapEntries.get(ctx.idx).getKey(), ctx.mapEntries.get(ctx.idx).getValue(), ctx, stack);
+                    ctx.idx++;
                 }
-
-                isNestedObjectPending = false;
-
-                if (ctx.mapEntries != null) {
-                    while (ctx.idx < ctx.mapEntries.size() && !isNestedObjectPending) {
-                        writeElement(buffer, ctx.mapEntries.get(ctx.idx).getKey(), ctx.mapEntries.get(ctx.idx).getValue(), ctx, stack);
-                        ctx.idx++;
-                    }
-                } else if (ctx.listEntries != null) {
-                    while (ctx.idx < ctx.listEntries.size() && !isNestedObjectPending) {
-                        writeElement(buffer, Integer.toString(ctx.idx), ctx.listEntries.get(ctx.idx), ctx, stack);
-                        ctx.idx++;
-                    }
-                }
-
-                if (!isNestedObjectPending) {
-                    writeTerminator(buffer, ctx);
-                    buffer.putInt(ctx.lengthPos, ctx.length);
-                    if (ctx.parent != null) {
-                        ctx.parent.length += ctx.length;
-                    }
-                    stack.removeLast();
-                    writerContextPool.release(ctx);
+            } else if (ctx.listEntries != null) {
+                while (ctx.idx < ctx.listEntries.size() && !isNestedObjectPending) {
+                    writeElement(buffer, Integer.toString(ctx.idx), ctx.listEntries.get(ctx.idx), ctx, stack);
+                    ctx.idx++;
                 }
             }
 
-            return buffer.flip().getBuffer();
-        } finally {
-            bufferPool.release(buffer);
+            if (!isNestedObjectPending) {
+                writeTerminator(buffer, ctx);
+                buffer.putInt(ctx.lengthPos, ctx.length);
+                if (ctx.parent != null) {
+                    ctx.parent.length += ctx.length;
+                }
+                stack.removeLast();
+                writerContextPool.release(ctx);
+            }
+        }
+
+        return buffer.flip().getBuffer();
+    }
+
+    public void serialize(Document document, OutputStream outputStream) {
+        ByteBuffer byteBuffer = serialize(document);
+        byte[] buf = new byte[64 * 1024];
+        try {
+            while (byteBuffer.hasRemaining()) {
+                byteBuffer.get(buf, 0, Math.min(buf.length, byteBuffer.remaining()));
+                outputStream.write(buf);
+            }
+        } catch (IOException e) {
+            throw new RuntimeException(e);
         }
     }
 

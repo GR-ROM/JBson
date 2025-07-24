@@ -12,6 +12,11 @@ public class DynamicByteBuffer {
         initBuffer();
     }
 
+    public DynamicByteBuffer(ByteBuffer buffer) {
+        this.buffer = buffer;
+        initBuffer();
+    }
+
     public void ensureCapacity(int additionalCapacity) {
         if (buffer.remaining() < additionalCapacity) {
             ByteBuffer oldBuffer = buffer;

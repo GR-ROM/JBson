@@ -4,6 +4,7 @@ import org.bson.RawBsonDocument;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import su.grinev.bson.BsonWriter;
+import su.grinev.bson.Document;
 
 import java.nio.ByteBuffer;
 import java.util.*;
@@ -29,7 +30,7 @@ public class BsonWriterTestTest {
     @Test
     void testEmptyDocument() {
         Map<String, Object> doc = new LinkedHashMap<>();
-        ByteBuffer buffer = writer.serialize(doc);
+        ByteBuffer buffer = writer.serialize(new Document(doc));
         byte[] bytes = toByteArray(buffer);
         RawBsonDocument raw = new RawBsonDocument(bytes);
         assertTrue(raw.keySet().isEmpty(), "Document should be empty");
@@ -38,7 +39,7 @@ public class BsonWriterTestTest {
     @Test
     void testEmptyArray() {
         Map<String, Object> doc = Collections.singletonMap("arr", Collections.emptyList());
-        ByteBuffer buffer = writer.serialize(doc);
+        ByteBuffer buffer = writer.serialize(new Document(doc));
         byte[] bytes = toByteArray(buffer);
         RawBsonDocument raw = new RawBsonDocument(bytes);
         assertEquals(0, raw.getArray("arr").size());
@@ -55,7 +56,7 @@ public class BsonWriterTestTest {
         doc.put("boolF", false);
         doc.put("nil", null);
 
-        ByteBuffer buffer = writer.serialize(doc);
+        ByteBuffer buffer = writer.serialize(new Document(doc));
         byte[] bytes = toByteArray(buffer);
         RawBsonDocument raw = new RawBsonDocument(bytes);
 
@@ -73,7 +74,7 @@ public class BsonWriterTestTest {
         byte[] data = new byte[] {0x01, 0x02, 0x03, 0x04};
         Map<String, Object> doc = Collections.singletonMap("bin", data);
 
-        ByteBuffer buffer = writer.serialize(doc);
+        ByteBuffer buffer = writer.serialize(new Document(doc));
         byte[] bytes = toByteArray(buffer);
         RawBsonDocument raw = new RawBsonDocument(bytes);
 
@@ -95,7 +96,7 @@ public class BsonWriterTestTest {
         Map<String, Object> doc = new LinkedHashMap<>();
         doc.put("nested", nested);
 
-        ByteBuffer buffer = writer.serialize(doc);
+        ByteBuffer buffer = writer.serialize(new Document(doc));
         byte[] bytes = toByteArray(buffer);
         RawBsonDocument raw = new RawBsonDocument(bytes);
 
@@ -117,7 +118,7 @@ public class BsonWriterTestTest {
         List<Object> list = Arrays.asList(doc1, doc2);
         Map<String, Object> doc = Collections.singletonMap("list", list);
 
-        ByteBuffer buffer = writer.serialize(doc);
+        ByteBuffer buffer = writer.serialize(new Document(doc));
 
         byte[] bytes = toByteArray(buffer);
         RawBsonDocument raw = new RawBsonDocument(bytes);
@@ -132,7 +133,7 @@ public class BsonWriterTestTest {
         Map<String, Object> doc = new LinkedHashMap<>();
         doc.put("sp c!@#$%^&*()", "v");
 
-        ByteBuffer buffer = writer.serialize(doc);
+        ByteBuffer buffer = writer.serialize(new Document(doc));
         byte[] bytes = toByteArray(buffer);
         RawBsonDocument raw = new RawBsonDocument(bytes);
         assertEquals("v", raw.getString("sp c!@#$%^&*()").getValue());
@@ -141,6 +142,6 @@ public class BsonWriterTestTest {
     @Test
     void testUnsupportedTypeThrows() {
         Map<String, Object> doc = Collections.singletonMap("date", new Date());
-        assertThrows(IllegalArgumentException.class, () -> writer.serialize(doc));
+        assertThrows(IllegalArgumentException.class, () -> writer.serialize(new Document(doc)));
     }
 }

@@ -15,6 +15,11 @@ public class Document {
         this.length = length;
     }
 
+    public Document(Map<String, Object> documentMap) {
+        this.documentMap = documentMap;
+        this.length = 0;
+    }
+
     public Object get(String key) {
         List<String> path = Arrays.stream(key.split("\\.")).toList();
 

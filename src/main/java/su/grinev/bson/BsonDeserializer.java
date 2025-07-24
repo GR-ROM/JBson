@@ -7,7 +7,19 @@ import java.nio.ByteOrder;
 import java.util.*;
 
 public class BsonDeserializer {
-    private final Pool<ReaderContext> contextPool = new Pool<>(1000, 10000, ReaderContext::new);
+    private final Pool<ReaderContext> contextPool;
+
+    public BsonDeserializer(
+            int concurrenctyLevel,
+            int initialContextStackPoolSize,
+            int maxContextStackPoolSize
+    ) {
+        contextPool = new Pool<>(
+                concurrenctyLevel * initialContextStackPoolSize,
+                concurrenctyLevel * maxContextStackPoolSize,
+                ReaderContext::new
+        );
+    }
 
     public Document deserialize(ByteBuffer buffer) {
         buffer.order(ByteOrder.LITTLE_ENDIAN);
@@ -41,13 +53,17 @@ public class BsonDeserializer {
         return new Document(rootDocument, len);
     }
 
-    public Document deserialize(InputStream inputStream) throws IOException {
-        DynamicByteBuffer byteBuffer = new DynamicByteBuffer(16 * 1024);
-        byte[] chunk = new byte[8192];
+    public Document deserialize(InputStream inputStream) {
+        DynamicByteBuffer byteBuffer = new DynamicByteBuffer(64 * 1024);
+        byte[] chunk = new byte[64 * 1024];
         int bytesRead;
-        while ((bytesRead = inputStream.read(chunk)) != -1) {
-            byteBuffer.ensureCapacity(bytesRead);
-            byteBuffer.put(chunk);
+        try {
+            while ((bytesRead = inputStream.read(chunk)) != -1) {
+                byteBuffer.ensureCapacity(bytesRead);
+                byteBuffer.put(chunk);
+            }
+        } catch (IOException e) {
+            throw new RuntimeException(e);
         }
         byteBuffer.flip();
         return deserialize(byteBuffer.getBuffer());
