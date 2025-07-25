@@ -6,8 +6,6 @@ import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.List;
@@ -81,8 +79,9 @@ public class BsonWriter {
         byte[] buf = new byte[64 * 1024];
         try {
             while (byteBuffer.hasRemaining()) {
-                byteBuffer.get(buf, 0, Math.min(buf.length, byteBuffer.remaining()));
-                outputStream.write(buf);
+                int chunkSize = Math.min(buf.length, byteBuffer.remaining());
+                byteBuffer.get(buf, 0, chunkSize);
+                outputStream.write(buf, 0, chunkSize);
             }
         } catch (IOException e) {
             throw new RuntimeException(e);
