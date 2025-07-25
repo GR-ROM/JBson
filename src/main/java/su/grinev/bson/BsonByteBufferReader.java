@@ -20,10 +20,12 @@ public class BsonByteBufferReader implements BsonReader {
     @Override
     public String readString() {
         int len = buffer.getInt();
-        int start = buffer.position();
 
-        buffer.position(buffer.position() + len);
-        return new String(buffer.array(), start, len - 1, StandardCharsets.UTF_8);
+        byte[] bytes = new byte[len - 1];
+        buffer.get(bytes);
+        buffer.position(buffer.position() + 1);
+
+        return new String(bytes, 0, len - 1, StandardCharsets.UTF_8);
     }
 
     @Override
