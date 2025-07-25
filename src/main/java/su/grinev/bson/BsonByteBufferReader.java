@@ -25,7 +25,7 @@ public class BsonByteBufferReader implements BsonReader {
         buffer.get(bytes);
         buffer.position(buffer.position() + 1);
 
-        return new String(bytes, 0, len - 1, StandardCharsets.UTF_8);
+        return new String(bytes, StandardCharsets.UTF_8);
     }
 
     @Override
@@ -34,8 +34,11 @@ public class BsonByteBufferReader implements BsonReader {
         int nullPos = findNullByteSimdLong(buffer);
         int len = nullPos - start;
 
-        buffer.position(buffer.position() + len + 1);
-        return new String(buffer.array(), start, len, StandardCharsets.UTF_8);
+        byte[] bytes = new byte[len];
+        buffer.get(bytes);
+
+        buffer.position(buffer.position() + 1);
+        return new String(bytes, StandardCharsets.UTF_8);
     }
 
     @Override
