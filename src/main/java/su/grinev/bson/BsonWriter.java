@@ -80,7 +80,7 @@ public class BsonWriter {
         BsonDeserializer deserializer = new BsonDeserializer(10, 1000, 10000);
         Document document1 = deserializer.deserialize(byteBuffer);
         System.out.println(document1.getDocumentMap());
-
+        byteBuffer.rewind();
         byte[] buf = new byte[64 * 1024];
         try {
             while (byteBuffer.hasRemaining()) {
