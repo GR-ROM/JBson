@@ -166,7 +166,7 @@ public class BsonWriter {
                         .put(bytes);               // data
             }
             case Instant i -> {
-                buffer.ensureCapacity(1 + keyBytes.length + 8);
+                buffer.ensureCapacity(1 + keyBytes.length + 1 + 8);
                 buffer.put((byte) 0x09);
                 writeCString(buffer, keyBytes);
                 buffer.putLong(i.toEpochMilli());

@@ -1,11 +1,14 @@
 package su.grinev.bson;
 
+import lombok.extern.slf4j.Slf4j;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.*;
 
+@Slf4j
 public class BsonDeserializer {
     private final Pool<ReaderContext> contextPool;
 
@@ -39,13 +42,15 @@ public class BsonDeserializer {
 
             if (ctx.getValue() instanceof Map m) {
                 if (m.isEmpty()) {
-                    bsonReader.readInt();
+                    int len = bsonReader.readInt();
+                    log.debug("Length: {}", len);
                 }
                 while (readElement(bsonReader, ctx, stack, m, null) && !ctx.isNestedObjectPending()) {
                 }
             } else if (ctx.getValue() instanceof List l) {
                 if (l.isEmpty()) {
-                    bsonReader.readInt();
+                    int len = bsonReader.readInt();
+                    log.debug("Length: {}", len);
                 }
                 while (readElement(bsonReader, ctx, stack, null, l) && !ctx.isNestedObjectPending()) {
                 }
