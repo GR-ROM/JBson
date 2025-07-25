@@ -6,6 +6,9 @@ import su.grinev.test.VpnForwardPacketDto;
 import su.grinev.test.VpnRequestDto;
 
 import java.nio.ByteBuffer;
+import java.time.Instant;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 public class ObjectMapperTests {
 
@@ -17,10 +20,13 @@ public class ObjectMapperTests {
                         .packet(new byte[1024])
                 .build());
 
+        vpnRequestDto.setTimestamp(Instant.ofEpochMilli(Instant.now().toEpochMilli()));
+
         ByteBuffer b = objectMapper.serialize(vpnRequestDto);
 
         VpnRequestDto<?> deserialized = objectMapper.deserialize(b, VpnRequestDto.class);
 
+        assertEquals(vpnRequestDto, deserialized);
     }
 
 //    @Test
