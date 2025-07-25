@@ -14,14 +14,14 @@ public class Pool<T> {
     private final Supplier<T> supplier;
     private final AtomicInteger counter = new AtomicInteger(0);
     private final int limit;
-    private final AtomicBoolean isWaiting;
+    private volatile boolean isWaiting;
 
     public Pool(int initialSize, int limit, Supplier<T> supplier) {
         this.initialSize = initialSize;
         this.supplier = supplier;
         this.limit = limit;
         this.pool = new ArrayList<>(initialSize);
-        isWaiting = new AtomicBoolean(false);
+        isWaiting = false;
         supply(initialSize, supplier);
     }
 
@@ -36,7 +36,7 @@ public class Pool<T> {
             synchronized (pool) {
                 while (counter.get() >= limit) {
                     try {
-                        isWaiting.set(true);
+                        isWaiting = true;
                         pool.wait();
                     } catch (InterruptedException e) {
                         throw new RuntimeException(e);
@@ -54,11 +54,11 @@ public class Pool<T> {
 
     public void release(T t) {
         pool.addLast(t);
-        if (counter.decrementAndGet() < limit && isWaiting.get()) {
+        if (counter.decrementAndGet() < limit && isWaiting) {
             synchronized (pool) {
+                isWaiting = false;
                 pool.notify();
             }
-            isWaiting.set(false);
         }
     }
 }

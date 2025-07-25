@@ -1,7 +1,7 @@
 package su.grinev.bson;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 public interface BsonReader extends Position {
     String readString();
@@ -13,7 +13,7 @@ public interface BsonReader extends Position {
     byte[] readBinary();
     byte readByte();
     String readObjectId();
-    LocalDateTime readDateTime();
+    Instant readDateTime();
     BigDecimal readDecimal128();
     String readCString();
 }

@@ -66,11 +66,9 @@ public class BsonByteBufferReader implements BsonReader {
     }
 
     @Override
-    public LocalDateTime readDateTime() {
+    public Instant readDateTime() {
         long epochMillis = buffer.getLong();
-        return Instant.ofEpochMilli(epochMillis)
-                .atZone(ZoneOffset.UTC)
-                .toLocalDateTime();
+        return Instant.ofEpochMilli(epochMillis);
     }
 
     @Override

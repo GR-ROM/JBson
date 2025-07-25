@@ -5,6 +5,8 @@ import su.grinev.bson.Document;
 
 import java.lang.reflect.*;
 import java.math.BigDecimal;
+import java.time.Instant;
+import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
@@ -177,6 +179,8 @@ public class Binder {
 
     public static boolean isPrimitiveOrWrapperOrString(Class<?> type) {
         return type.isPrimitive()
+                || type == Instant.class
+                || type == LocalDateTime.class
                 || type == BigDecimal.class
                 || type == Boolean.class
                 || type == Byte.class

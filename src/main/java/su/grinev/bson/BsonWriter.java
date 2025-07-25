@@ -5,6 +5,9 @@ import java.io.OutputStream;
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.List;
@@ -123,13 +126,7 @@ public class BsonWriter {
                 writeCString(buffer, keyBytes);
                 buffer.putInt(i);
             }
-            case Long l -> {
-                buffer.ensureCapacity( 1 + keyBytes.length + 1 + 8);
-                buffer.put((byte) 0x12); // int64
-
-                writeCString(buffer, keyBytes);
-                buffer.putLong(l);
-            }
+            case Long l -> writeLong(buffer, l, keyBytes);
             case Double d -> {
                 buffer.ensureCapacity( 1 + keyBytes.length + 1 + 8);
                 buffer.put((byte) 0x01); // double
@@ -169,6 +166,12 @@ public class BsonWriter {
                         .put((byte) 0x00)           // generic subtype
                         .put(bytes);               // data
             }
+            case Instant i -> {
+                buffer.ensureCapacity(1 + keyBytes.length + 8);
+                buffer.put((byte) 0x09);
+                writeCString(buffer, keyBytes);
+                buffer.putLong(i.toEpochMilli());
+            }
             case Map map -> {
                 buffer.ensureCapacity(1 + keyBytes.length + 1);
                 buffer.put((byte) 0x03);            // embedded document
@@ -193,6 +196,14 @@ public class BsonWriter {
         }
 
         ctx.length += buffer.position() - start;
+    }
+
+    private static void writeLong(DynamicByteBuffer buffer, Long l, byte[] keyBytes) {
+        buffer.ensureCapacity( 1 + keyBytes.length + 1 + 8);
+        buffer.put((byte) 0x12); // int64
+
+        writeCString(buffer, keyBytes);
+        buffer.putLong(l);
     }
 
     private static void writeCString(DynamicByteBuffer buffer, byte[] keyBytes) {
