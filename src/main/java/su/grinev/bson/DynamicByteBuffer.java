@@ -54,6 +54,11 @@ public class DynamicByteBuffer {
         return this;
     }
 
+    public DynamicByteBuffer put(byte[] b, int off, int len) {
+        buffer.put(b, off, len);
+        return this;
+    }
+
     public DynamicByteBuffer putInt(int i) {
         buffer.putInt(i);
         return this;

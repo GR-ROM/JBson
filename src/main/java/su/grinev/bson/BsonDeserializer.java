@@ -69,7 +69,7 @@ public class BsonDeserializer {
         try {
             while ((bytesRead = inputStream.read(chunk)) != -1) {
                 byteBuffer.ensureCapacity(bytesRead);
-                byteBuffer.put(chunk);
+                byteBuffer.put(chunk, 0, bytesRead);
             }
         } catch (IOException e) {
             throw new RuntimeException(e);
