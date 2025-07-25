@@ -43,14 +43,12 @@ public class BsonDeserializer {
             if (ctx.getValue() instanceof Map m) {
                 if (m.isEmpty()) {
                     int len = bsonReader.readInt();
-                    log.debug("Length: {}", len);
                 }
                 while (readElement(bsonReader, ctx, stack, m, null) && !ctx.isNestedObjectPending()) {
                 }
             } else if (ctx.getValue() instanceof List l) {
                 if (l.isEmpty()) {
                     int len = bsonReader.readInt();
-                    log.debug("Length: {}", len);
                 }
                 while (readElement(bsonReader, ctx, stack, null, l) && !ctx.isNestedObjectPending()) {
                 }
