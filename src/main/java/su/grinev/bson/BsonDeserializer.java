@@ -63,19 +63,30 @@ public class BsonDeserializer {
     }
 
     public Document deserialize(InputStream inputStream) {
-        DynamicByteBuffer byteBuffer = new DynamicByteBuffer(64 * 1024);
-        byte[] chunk = new byte[64 * 1024];
-        int bytesRead;
         try {
-            while ((bytesRead = inputStream.read(chunk)) != -1) {
-                byteBuffer.ensureCapacity(bytesRead);
-                byteBuffer.put(chunk, 0, bytesRead);
+            byte[] lengthBytes = inputStream.readNBytes(4);
+            if (lengthBytes.length != 4) {
+                throw new IOException("Unable to read document length");
             }
+
+            int totalLength = ByteBuffer.wrap(lengthBytes).order(ByteOrder.LITTLE_ENDIAN).getInt();
+            byte[] documentBytes = new byte[totalLength];
+            System.arraycopy(lengthBytes, 0, documentBytes, 0, 4);
+
+            int offset = 4;
+            while (offset < totalLength) {
+                int read = inputStream.read(documentBytes, offset, totalLength - offset);
+                if (read == -1) {
+                    throw new IOException("Unexpected end of stream");
+                }
+                offset += read;
+            }
+
+            ByteBuffer buffer = ByteBuffer.wrap(documentBytes);
+            return deserialize(buffer);
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
-        byteBuffer.flip();
-        return deserialize(byteBuffer.getBuffer());
     }
 
     private boolean readElement(BsonReader objectReader, ReaderContext ctx, Deque<ReaderContext> stack, Map<String, Object> map, List<Object> list) {
