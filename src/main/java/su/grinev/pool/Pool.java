@@ -3,7 +3,6 @@ package su.grinev.pool;
 import java.util.function.Supplier;
 
 public class Pool<T> extends BasePool<T> {
-
     private final Supplier<T> supplier;
 
     public Pool(int initialSize, int limit, Supplier<T> supplier) {
