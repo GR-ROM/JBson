@@ -65,31 +65,27 @@ public class BsonObjectReader {
         return new Document(rootDocument);
     }
 
-    public Document deserialize(InputStream inputStream) {
-        try {
-            byte[] lengthBytes = inputStream.readNBytes(4);
-            if (lengthBytes.length != 4) {
-                throw new IOException("Unable to read document length");
-            }
-
-            int totalLength = ByteBuffer.wrap(lengthBytes).order(ByteOrder.LITTLE_ENDIAN).getInt();
-            byte[] documentBytes = new byte[totalLength];
-            System.arraycopy(lengthBytes, 0, documentBytes, 0, 4);
-
-            int offset = 4;
-            while (offset < totalLength) {
-                int read = inputStream.read(documentBytes, offset, totalLength - offset);
-                if (read == -1) {
-                    throw new IOException("Unexpected end of stream");
-                }
-                offset += read;
-            }
-
-            ByteBuffer buffer = ByteBuffer.wrap(documentBytes);
-            return deserialize(buffer);
-        } catch (IOException e) {
-            throw new RuntimeException(e);
+    public Document deserialize(InputStream inputStream) throws IOException {
+        byte[] lengthBytes = inputStream.readNBytes(4);
+        if (lengthBytes.length != 4) {
+            throw new IOException("Unable to read document length");
         }
+
+        int totalLength = ByteBuffer.wrap(lengthBytes).order(ByteOrder.LITTLE_ENDIAN).getInt();
+        byte[] documentBytes = new byte[totalLength];
+        System.arraycopy(lengthBytes, 0, documentBytes, 0, 4);
+
+        int offset = 4;
+        while (offset < totalLength) {
+            int read = inputStream.read(documentBytes, offset, totalLength - offset);
+            if (read == -1) {
+                throw new IOException("Unexpected end of stream");
+            }
+            offset += read;
+        }
+
+        ByteBuffer buffer = ByteBuffer.wrap(documentBytes);
+        return deserialize(buffer);
     }
 
     private boolean readElement(BsonReader objectReader, ReaderContext ctx, Deque<ReaderContext> stack, Map<String, Object> map, List<Object> list) {

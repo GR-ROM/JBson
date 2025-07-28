@@ -86,8 +86,9 @@ public class BsonObjectWriter {
         return buffer;
     }
 
-    public void serialize(Document document, OutputStream outputStream) {
+    public void serialize(Document document, OutputStream outputStream) throws IOException {
         DynamicByteBuffer dynamicByteBuffer = serialize(document);
+        dynamicByteBuffer.flip();
         byte[] buf = bufferPool.get();
         try {
             while (dynamicByteBuffer.getBuffer().hasRemaining()) {
@@ -95,8 +96,6 @@ public class BsonObjectWriter {
                 dynamicByteBuffer.getBuffer().get(buf, 0, chunkSize);
                 outputStream.write(buf, 0, chunkSize);
             }
-        } catch (IOException e) {
-            throw new RuntimeException(e);
         } finally {
             bufferPool.release(buf);
             dynamicByteBuffer.dispose();

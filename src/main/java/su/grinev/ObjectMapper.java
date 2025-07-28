@@ -5,6 +5,7 @@ import su.grinev.bson.BsonObjectWriter;
 import su.grinev.bson.Document;
 import su.grinev.pool.DynamicByteBuffer;
 
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
@@ -29,7 +30,7 @@ public class ObjectMapper {
         return bsonObjectWriter.serialize(document);
     }
 
-    public void serialize(Object o, OutputStream outputStream) {
+    public void serialize(Object o, OutputStream outputStream) throws IOException {
         Document document = writerBinder.unbind(o);
         bsonObjectWriter.serialize(document, outputStream);
     }
@@ -39,7 +40,7 @@ public class ObjectMapper {
         return readerBinder.bind(tClass, document);
     }
 
-    public <T> T deserialize(InputStream inputStream, Class<T> tClass) {
+    public <T> T deserialize(InputStream inputStream, Class<T> tClass) throws IOException {
         Document document = bsonObjectReader.deserialize(inputStream);
         return readerBinder.bind(tClass, document);
     }
