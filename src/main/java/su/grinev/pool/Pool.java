@@ -48,13 +48,15 @@ public class Pool<T> {
         if (pool.isEmpty()) {
             supply(initialSize);
         }
-        return pool.removeLast();
+        synchronized (pool) {
+            return pool.removeLast();
+        }
     }
 
     public void release(T t) {
-        pool.addLast(t);
-        if (counter.decrementAndGet() < limit && isWaiting) {
-            synchronized (pool) {
+        synchronized (pool) {
+            pool.addLast(t);
+            if (counter.decrementAndGet() < limit && isWaiting) {
                 isWaiting = false;
                 pool.notify();
             }

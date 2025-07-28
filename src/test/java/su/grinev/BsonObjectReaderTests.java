@@ -28,7 +28,7 @@ public class BsonObjectReaderTests {
 
     @Test
     public void test() {
-        BsonObjectReader deserializer = new BsonObjectReader(1, 1000, 10000);
+        BsonObjectReader deserializer = new BsonObjectReader(1000, 10000);
 
         ByteBuffer buffer = ByteBuffer.wrap(bsonBytes);
 

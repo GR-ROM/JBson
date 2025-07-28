@@ -7,7 +7,6 @@ import su.grinev.pool.Pool;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.math.BigDecimal;
-import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayDeque;
@@ -21,18 +20,26 @@ import static su.grinev.bson.WriterContext.fillForDocument;
 
 public class BsonObjectWriter {
     private final Pool<WriterContext> writerContextPool;
-    private final DisposablePool<DynamicByteBuffer> dynamicByteBufferPool = new DisposablePool<>(1000, 10000, () -> new DynamicByteBuffer(64 * 1024));
-    private final Pool<byte[]> bufferPool = new Pool<>(1000, 1000, () -> new byte[64 * 1024]);
+    private final DisposablePool<DynamicByteBuffer> dynamicByteBufferPool;
+    private final Pool<byte[]> bufferPool;
 
     public BsonObjectWriter(
-            int concurrencyLevel,
             int initialContextStackPoolSize,
             int maxContextStackPoolSize
     ) {
         writerContextPool = new Pool<>(
-                concurrencyLevel * initialContextStackPoolSize,
-                concurrencyLevel * maxContextStackPoolSize,
+                initialContextStackPoolSize,
+                maxContextStackPoolSize,
                 WriterContext::new
+        );
+        dynamicByteBufferPool = new DisposablePool<>(
+                initialContextStackPoolSize,
+                maxContextStackPoolSize,
+                () -> new DynamicByteBuffer(16 * 1024));
+        bufferPool = new Pool<>(
+                initialContextStackPoolSize,
+                maxContextStackPoolSize,
+                () -> new byte[16 * 1024]
         );
     }
 

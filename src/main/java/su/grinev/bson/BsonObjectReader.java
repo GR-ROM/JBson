@@ -14,13 +14,12 @@ public class BsonObjectReader {
     private final Pool<ReaderContext> contextPool;
 
     public BsonObjectReader(
-            int concurrenctyLevel,
             int initialContextStackPoolSize,
             int maxContextStackPoolSize
     ) {
         contextPool = new Pool<>(
-                concurrenctyLevel * initialContextStackPoolSize,
-                concurrenctyLevel * maxContextStackPoolSize,
+                initialContextStackPoolSize,
+                maxContextStackPoolSize,
                 ReaderContext::new
         );
     }

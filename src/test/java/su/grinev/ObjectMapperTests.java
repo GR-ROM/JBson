@@ -41,8 +41,8 @@ public class ObjectMapperTests {
     @Test
     public void performanceTest() {
         Binder binder = new Binder();
-        BsonObjectWriter bsonObjectWriter = new BsonObjectWriter(10, 1000, 10000);
-        BsonObjectReader bsonObjectReader = new BsonObjectReader(10, 1000, 10000);
+        BsonObjectWriter bsonObjectWriter = new BsonObjectWriter(100, 10000);
+        BsonObjectReader bsonObjectReader = new BsonObjectReader( 100, 10000);
 
         byte[] packet = new byte[128 * 1024];
 
