@@ -8,14 +8,14 @@ public class DisposablePool<T extends Disposable> extends BasePool<T> {
     public DisposablePool(int initialSize, int limit, Supplier<T> supplier) {
         super(initialSize, limit);
         this.supplier = supplier;
-        supply(initialSize);
+        for (int i = 0; i < limit; i++) {
+            pool.add(supply());
+        }
     }
 
-    protected void supply(int initialSize) {
-        for (int i = 0; i < initialSize; i++) {
-            T obj = supplier.get();
-            obj.setOnDispose(() -> super.release(obj));
-            pool.addLast(obj);
-        }
+    protected T supply() {
+        T t = supplier.get();
+        t.setOnDispose(() -> release(t));
+        return t;
     }
 }

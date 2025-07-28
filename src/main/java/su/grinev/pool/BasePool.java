@@ -8,17 +8,17 @@ public abstract class BasePool<T> {
     protected final AtomicInteger counter = new AtomicInteger(0);
     protected final ConcurrentLinkedDeque<T> pool;
     protected int limit;
-    protected int initSize;
+    protected int initalSize;
     protected volatile boolean isWaiting;
 
-    public BasePool(int initSize, int limit) {
+    public BasePool(int initialSize, int limit) {
         this.pool = new ConcurrentLinkedDeque<>();
         this.limit = limit;
-        this.initSize = initSize;
+        this.initalSize = initialSize;
         this.isWaiting = false;
     }
 
-    protected abstract void supply(int initSize);
+    protected abstract T supply();
 
     public T get() {
         synchronized (pool) {
@@ -35,7 +35,7 @@ public abstract class BasePool<T> {
                 counter.incrementAndGet();
             }
             if (pool.isEmpty()) {
-                supply(initSize);
+                pool.add(supply());
             }
             return pool.removeLast();
         }

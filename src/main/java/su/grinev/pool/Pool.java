@@ -9,15 +9,14 @@ public class Pool<T> extends BasePool<T> {
     public Pool(int initialSize, int limit, Supplier<T> supplier) {
         super(initialSize, limit);
         this.supplier = supplier;
-        isWaiting = false;
-        supply(initialSize);
+
+        for (int i = 0; i < limit; i++) {
+            pool.add(supply());
+        }
     }
 
     @Override
-    protected void supply(int initialSize) {
-        for (int i = 0; i < initialSize; i++) {
-            T obj = supplier.get();
-            pool.addLast(obj);
-        }
+    protected T supply() {
+        return supplier.get();
     }
 }
