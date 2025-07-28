@@ -1,7 +1,8 @@
 package su.grinev;
 
-import su.grinev.bson.*;
-import su.grinev.pool.DisposablePool;
+import su.grinev.bson.BsonObjectReader;
+import su.grinev.bson.BsonObjectWriter;
+import su.grinev.bson.Document;
 import su.grinev.pool.DynamicByteBuffer;
 
 import java.io.InputStream;

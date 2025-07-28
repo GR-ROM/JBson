@@ -3,7 +3,10 @@ package su.grinev;
 import annotation.BsonType;
 import su.grinev.bson.Document;
 
-import java.lang.reflect.*;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDateTime;
