@@ -22,7 +22,7 @@ public class ObjectMapperTests {
 
     @Test
     public void serializeAndDeserializeObjectTest() {
-        ObjectMapper objectMapper = new ObjectMapper();
+        ObjectMapper objectMapper = new ObjectMapper(10, 100);
 
         VpnRequestDto vpnRequestDto = VpnRequestDto.wrap(FOO, VpnForwardPacketDto.builder()
                         .packet(new byte[1024])
@@ -41,8 +41,8 @@ public class ObjectMapperTests {
     @Test
     public void performanceTest() {
         Binder binder = new Binder();
-        BsonObjectWriter bsonObjectWriter = new BsonObjectWriter(100, 10000);
-        BsonObjectReader bsonObjectReader = new BsonObjectReader( 100, 10000);
+        BsonObjectWriter bsonObjectWriter = new BsonObjectWriter(10, 1000);
+        BsonObjectReader bsonObjectReader = new BsonObjectReader( 10, 1000);
 
         byte[] packet = new byte[128 * 1024];
 

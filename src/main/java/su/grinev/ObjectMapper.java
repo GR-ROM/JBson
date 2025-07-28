@@ -9,12 +9,19 @@ import java.io.OutputStream;
 import java.nio.ByteBuffer;
 
 public class ObjectMapper {
-    public static final int INITIAL_POOL_SIZE = 100;
-    public static final int MAX_POOL_SIZE = 100000;
+    public final int initialPoolSize;
+    public final int maxPoolSize;
     private final Binder writerBinder = new Binder();
     private final Binder readerBinder = new Binder();
-    private final BsonObjectWriter bsonObjectWriter = new BsonObjectWriter(INITIAL_POOL_SIZE, MAX_POOL_SIZE);
-    private final BsonObjectReader bsonObjectReader = new BsonObjectReader(INITIAL_POOL_SIZE, MAX_POOL_SIZE);
+    private final BsonObjectWriter bsonObjectWriter;
+    private final BsonObjectReader bsonObjectReader;
+
+    public ObjectMapper(int initialPoolSize, int maxPoolSize) {
+        this.initialPoolSize = initialPoolSize;
+        this.maxPoolSize = maxPoolSize;
+        this.bsonObjectWriter = new BsonObjectWriter(initialPoolSize, maxPoolSize);
+        this.bsonObjectReader = new BsonObjectReader(initialPoolSize, maxPoolSize);
+    }
 
     public DynamicByteBuffer serialize(Object o) {
         Document document = writerBinder.unbind(o);
