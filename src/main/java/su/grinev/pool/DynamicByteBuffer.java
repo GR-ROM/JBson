@@ -1,19 +1,14 @@
-package su.grinev.bson;
+package su.grinev.pool;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
-public class DynamicByteBuffer {
-
+public class DynamicByteBuffer implements Disposable {
+    private Runnable onDispose;
     private ByteBuffer buffer;
 
     public DynamicByteBuffer(int capacity) {
         this.buffer = ByteBuffer.allocate(capacity);
-        initBuffer();
-    }
-
-    public DynamicByteBuffer(ByteBuffer buffer) {
-        this.buffer = buffer;
         initBuffer();
     }
 
@@ -102,5 +97,15 @@ public class DynamicByteBuffer {
     public DynamicByteBuffer putDouble(double d) {
         buffer.putDouble(d);
         return this;
+    }
+
+    @Override
+    public void setOnDispose(Runnable onDispose) {
+        this.onDispose = onDispose;
+    }
+
+    @Override
+    public void dispose() {
+        this.onDispose.run();
     }
 }

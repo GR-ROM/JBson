@@ -1,33 +1,32 @@
-package su.grinev.bson;
+package su.grinev.pool;
 
-import java.util.ArrayList;
+import java.util.LinkedList;
 import java.util.List;
-
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 
 public class Pool<T> {
 
-    private final List<T> pool;
-    private final int initialSize;
-    private final Supplier<T> supplier;
-    private final AtomicInteger counter = new AtomicInteger(0);
-    private final int limit;
-    private volatile boolean isWaiting;
+    protected final List<T> pool;
+    protected final int initialSize;
+    protected final Supplier<T> supplier;
+    protected final AtomicInteger counter = new AtomicInteger(0);
+    protected final int limit;
+    protected volatile boolean isWaiting;
 
     public Pool(int initialSize, int limit, Supplier<T> supplier) {
         this.initialSize = initialSize;
         this.supplier = supplier;
         this.limit = limit;
-        this.pool = new ArrayList<>(initialSize);
+        this.pool = new LinkedList<>();
         isWaiting = false;
-        supply(initialSize, supplier);
+        supply(initialSize);
     }
 
-    private void supply(int initialSize, Supplier<T> supplier) {
+    protected void supply(int initialSize) {
         for (int i = 0; i < initialSize; i++) {
-            pool.addLast(supplier.get());
+            T obj = supplier.get();
+            pool.addLast(obj);
         }
     }
 
@@ -47,7 +46,7 @@ public class Pool<T> {
             counter.incrementAndGet();
         }
         if (pool.isEmpty()) {
-            supply(initialSize, supplier);
+            supply(initialSize);
         }
         return pool.removeLast();
     }

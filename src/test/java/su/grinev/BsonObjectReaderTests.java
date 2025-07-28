@@ -1,12 +1,12 @@
 package su.grinev;
 
 import org.junit.jupiter.api.Test;
-import su.grinev.bson.BsonDeserializer;
+import su.grinev.bson.BsonObjectReader;
 import su.grinev.bson.Document;
 
 import java.nio.ByteBuffer;
 
-public class BsonDeserializerTests {
+public class BsonObjectReaderTests {
 
     byte[] bsonBytes = new byte[] {
             (byte)0xDB, 0x00, 0x00, 0x00, 0x03, 0x64, 0x61, 0x74, 0x61, 0x00, 0x4E, 0x00, 0x00, 0x00, 0x05, 0x70,
@@ -28,7 +28,7 @@ public class BsonDeserializerTests {
 
     @Test
     public void test() {
-        BsonDeserializer deserializer = new BsonDeserializer(1, 1000, 10000);
+        BsonObjectReader deserializer = new BsonObjectReader(1, 1000, 10000);
 
         ByteBuffer buffer = ByteBuffer.wrap(bsonBytes);
 

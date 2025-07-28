@@ -1,5 +1,9 @@
 package su.grinev.bson;
 
+import su.grinev.pool.DisposablePool;
+import su.grinev.pool.DynamicByteBuffer;
+import su.grinev.pool.Pool;
+
 import java.io.IOException;
 import java.io.OutputStream;
 import java.math.BigDecimal;
@@ -15,10 +19,12 @@ import static su.grinev.bson.Utility.encodeDecimal128;
 import static su.grinev.bson.WriterContext.fillForArray;
 import static su.grinev.bson.WriterContext.fillForDocument;
 
-public class BsonWriter {
+public class BsonObjectWriter {
     private final Pool<WriterContext> writerContextPool;
+    private final DisposablePool<DynamicByteBuffer> dynamicByteBufferPool = new DisposablePool<>(1000, 10000, () -> new DynamicByteBuffer(64 * 1024));
+    private final Pool<byte[]> bufferPool = new Pool<>(1000, 1000, () -> new byte[64 * 1024]);
 
-    public BsonWriter(
+    public BsonObjectWriter(
             int concurrencyLevel,
             int initialContextStackPoolSize,
             int maxContextStackPoolSize
@@ -30,8 +36,8 @@ public class BsonWriter {
         );
     }
 
-    public ByteBuffer serialize(Document document) {
-        DynamicByteBuffer buffer = new DynamicByteBuffer(64 * 1024);
+    public DynamicByteBuffer serialize(Document document) {
+        DynamicByteBuffer buffer = dynamicByteBufferPool.get();
         buffer.initBuffer();
 
         Deque<WriterContext> stack = new ArrayDeque<>(64);
@@ -70,21 +76,23 @@ public class BsonWriter {
             }
             ctx.setNestedObjectPending(false);
         }
-
-        return buffer.flip().getBuffer();
+        return buffer;
     }
 
     public void serialize(Document document, OutputStream outputStream) {
-        ByteBuffer byteBuffer = serialize(document);
-        byte[] buf = new byte[64 * 1024];
+        DynamicByteBuffer dynamicByteBuffer = serialize(document);
+        byte[] buf = bufferPool.get();
         try {
-            while (byteBuffer.hasRemaining()) {
-                int chunkSize = Math.min(buf.length, byteBuffer.remaining());
-                byteBuffer.get(buf, 0, chunkSize);
+            while (dynamicByteBuffer.getBuffer().hasRemaining()) {
+                int chunkSize = Math.min(buf.length, dynamicByteBuffer.getBuffer().remaining());
+                dynamicByteBuffer.getBuffer().get(buf, 0, chunkSize);
                 outputStream.write(buf, 0, chunkSize);
             }
         } catch (IOException e) {
             throw new RuntimeException(e);
+        } finally {
+            bufferPool.release(buf);
+            dynamicByteBuffer.dispose();
         }
     }
 

@@ -3,20 +3,21 @@ package su.grinev;
 import org.bson.RawBsonDocument;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import su.grinev.bson.BsonWriter;
+import su.grinev.bson.BsonObjectWriter;
 import su.grinev.bson.Document;
+import su.grinev.pool.DynamicByteBuffer;
 
 import java.nio.ByteBuffer;
 import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-public class BsonWriterTestTest {
-    private BsonWriter writer;
+public class BsonObjectWriterTestTest {
+    private BsonObjectWriter writer;
 
     @BeforeEach
     void setUp() {
-        writer = new BsonWriter(10, 1000, 10000);
+        writer = new BsonObjectWriter(10, 1000, 10000);
     }
 
     private byte[] toByteArray(ByteBuffer buffer) {
@@ -30,8 +31,8 @@ public class BsonWriterTestTest {
     @Test
     void testEmptyDocument() {
         Map<String, Object> doc = new LinkedHashMap<>();
-        ByteBuffer buffer = writer.serialize(new Document(doc));
-        byte[] bytes = toByteArray(buffer);
+        DynamicByteBuffer buffer = writer.serialize(new Document(doc));
+        byte[] bytes = toByteArray(buffer.getBuffer());
         RawBsonDocument raw = new RawBsonDocument(bytes);
         assertTrue(raw.isEmpty(), "Document should be empty");
     }
@@ -39,8 +40,8 @@ public class BsonWriterTestTest {
     @Test
     void testEmptyArray() {
         Map<String, Object> doc = Collections.singletonMap("arr", Collections.emptyList());
-        ByteBuffer buffer = writer.serialize(new Document(doc));
-        byte[] bytes = toByteArray(buffer);
+        DynamicByteBuffer buffer = writer.serialize(new Document(doc));
+        byte[] bytes = toByteArray(buffer.getBuffer());
         RawBsonDocument raw = new RawBsonDocument(bytes);
         assertEquals(0, raw.getArray("arr").size());
     }
@@ -56,8 +57,8 @@ public class BsonWriterTestTest {
         doc.put("boolF", false);
         doc.put("nil", null);
 
-        ByteBuffer buffer = writer.serialize(new Document(doc));
-        byte[] bytes = toByteArray(buffer);
+        DynamicByteBuffer buffer = writer.serialize(new Document(doc));
+        byte[] bytes = toByteArray(buffer.getBuffer());
         RawBsonDocument raw = new RawBsonDocument(bytes);
 
         assertEquals("hello", raw.getString("str").getValue());
@@ -74,8 +75,8 @@ public class BsonWriterTestTest {
         byte[] data = new byte[] {0x01, 0x02, 0x03, 0x04};
         Map<String, Object> doc = Collections.singletonMap("bin", data);
 
-        ByteBuffer buffer = writer.serialize(new Document(doc));
-        byte[] bytes = toByteArray(buffer);
+        DynamicByteBuffer buffer = writer.serialize(new Document(doc));
+        byte[] bytes = toByteArray(buffer.getBuffer());
         RawBsonDocument raw = new RawBsonDocument(bytes);
 
         byte[] read = raw.getBinary("bin").getData();
@@ -96,8 +97,8 @@ public class BsonWriterTestTest {
         Map<String, Object> doc = new LinkedHashMap<>();
         doc.put("nested", nested);
 
-        ByteBuffer buffer = writer.serialize(new Document(doc));
-        byte[] bytes = toByteArray(buffer);
+        DynamicByteBuffer buffer = writer.serialize(new Document(doc));
+        byte[] bytes = toByteArray(buffer.getBuffer());
         RawBsonDocument raw = new RawBsonDocument(bytes);
 
         var nestedRaw = raw.getDocument("nested");
@@ -118,9 +119,9 @@ public class BsonWriterTestTest {
         List<Object> list = Arrays.asList(doc1, doc2);
         Map<String, Object> doc = Collections.singletonMap("list", list);
 
-        ByteBuffer buffer = writer.serialize(new Document(doc));
+        DynamicByteBuffer buffer = writer.serialize(new Document(doc));
 
-        byte[] bytes = toByteArray(buffer);
+        byte[] bytes = toByteArray(buffer.getBuffer());
         RawBsonDocument raw = new RawBsonDocument(bytes);
 
         var arr = raw.getArray("list");
@@ -133,8 +134,8 @@ public class BsonWriterTestTest {
         Map<String, Object> doc = new LinkedHashMap<>();
         doc.put("sp c!@#$%^&*()", "v");
 
-        ByteBuffer buffer = writer.serialize(new Document(doc));
-        byte[] bytes = toByteArray(buffer);
+        DynamicByteBuffer buffer = writer.serialize(new Document(doc));
+        byte[] bytes = toByteArray(buffer.getBuffer());
         RawBsonDocument raw = new RawBsonDocument(bytes);
         assertEquals("v", raw.getString("sp c!@#$%^&*()").getValue());
     }

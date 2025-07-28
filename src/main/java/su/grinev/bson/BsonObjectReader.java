@@ -1,6 +1,7 @@
 package su.grinev.bson;
 
 import lombok.extern.slf4j.Slf4j;
+import su.grinev.pool.Pool;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -9,10 +10,10 @@ import java.nio.ByteOrder;
 import java.util.*;
 
 @Slf4j
-public class BsonDeserializer {
+public class BsonObjectReader {
     private final Pool<ReaderContext> contextPool;
 
-    public BsonDeserializer(
+    public BsonObjectReader(
             int concurrenctyLevel,
             int initialContextStackPoolSize,
             int maxContextStackPoolSize

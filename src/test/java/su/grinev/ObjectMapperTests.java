@@ -1,9 +1,10 @@
 package su.grinev;
 
 import org.junit.jupiter.api.Test;
-import su.grinev.bson.BsonDeserializer;
-import su.grinev.bson.BsonWriter;
+import su.grinev.bson.BsonObjectReader;
+import su.grinev.bson.BsonObjectWriter;
 import su.grinev.bson.Document;
+import su.grinev.pool.DynamicByteBuffer;
 import su.grinev.test.VpnForwardPacketDto;
 import su.grinev.test.VpnRequestDto;
 
@@ -29,18 +30,19 @@ public class ObjectMapperTests {
 
         vpnRequestDto.setTimestamp(Instant.ofEpochMilli(Instant.now().toEpochMilli()));
 
-        ByteBuffer b = objectMapper.serialize(vpnRequestDto);
+        DynamicByteBuffer b = objectMapper.serialize(vpnRequestDto);
+        b.flip();
+        VpnRequestDto<?> deserialized = objectMapper.deserialize(b.getBuffer(), VpnRequestDto.class);
 
-        VpnRequestDto<?> deserialized = objectMapper.deserialize(b, VpnRequestDto.class);
-
+        b.dispose();
         assertEquals(vpnRequestDto, deserialized);
     }
 
     @Test
     public void performanceTest() {
         Binder binder = new Binder();
-        BsonWriter bsonWriter = new BsonWriter(10, 1000, 10000);
-        BsonDeserializer bsonDeserializer = new BsonDeserializer(10, 1000, 10000);
+        BsonObjectWriter bsonObjectWriter = new BsonObjectWriter(10, 1000, 10000);
+        BsonObjectReader bsonObjectReader = new BsonObjectReader(10, 1000, 10000);
 
         byte[] packet = new byte[128 * 1024];
 
@@ -63,11 +65,12 @@ public class ObjectMapperTests {
         for (int i = 0; i < 10000; i++) {
             Document documentMap = binder.unbind(requestDto);
             long delta = System.nanoTime();
-            ByteBuffer b = bsonWriter.serialize(documentMap);
+            DynamicByteBuffer b = bsonObjectWriter.serialize(documentMap);
             serializationTime.add((System.nanoTime() - delta) / 1000);
-
+            b.flip();
             delta = System.nanoTime();
-            deserialized = bsonDeserializer.deserialize(b);
+            deserialized = bsonObjectReader.deserialize(b.getBuffer());
+            b.dispose();
             deserializationTime.add((System.nanoTime() - delta) / 1000);
             request1 = binder.bind(VpnRequestDto.class, deserialized);
         }
