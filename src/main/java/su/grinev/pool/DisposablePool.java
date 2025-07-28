@@ -8,7 +8,7 @@ public class DisposablePool<T extends Disposable> extends BasePool<T> {
     public DisposablePool(int initialSize, int limit, Supplier<T> supplier) {
         super(initialSize, limit);
         this.supplier = supplier;
-        for (int i = 0; i < limit; i++) {
+        for (int i = 0; i < initialSize; i++) {
             pool.add(supply());
         }
     }

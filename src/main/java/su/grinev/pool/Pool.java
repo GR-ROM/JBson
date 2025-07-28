@@ -10,7 +10,7 @@ public class Pool<T> extends BasePool<T> {
         super(initialSize, limit);
         this.supplier = supplier;
 
-        for (int i = 0; i < limit; i++) {
+        for (int i = 0; i < initialSize; i++) {
             pool.add(supply());
         }
     }
