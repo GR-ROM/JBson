@@ -1,5 +1,7 @@
 package su.grinev.bson;
 
+import su.grinev.pool.Pool;
+
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
@@ -10,33 +12,49 @@ import static su.grinev.bson.Utility.findNullByteSimdLong;
 
 public class BsonByteBufferReader implements BsonReader {
     private final ByteBuffer buffer;
+    private final Pool<byte[]> bufferPool;
 
-    public BsonByteBufferReader(ByteBuffer buffer) {
+    public BsonByteBufferReader(ByteBuffer buffer, Pool<byte[]> bufferPool) {
         this.buffer = buffer;
+        this.bufferPool = bufferPool;
     }
 
     @Override
     public String readString() {
-        int len = buffer.getInt();
+        byte[] bytes = bufferPool.get();
+        try {
+            int len = buffer.getInt();
 
-        byte[] bytes = new byte[len - 1];
-        buffer.get(bytes);
-        buffer.position(buffer.position() + 1);
+            if (len > bytes.length) {
+                bytes = new byte[len - 1];
+            }
+            buffer.get(bytes, 0, len - 1);
+            buffer.position(buffer.position() + 1);
 
-        return new String(bytes, StandardCharsets.UTF_8);
+            return new String(bytes, 0, len - 1, StandardCharsets.UTF_8);
+        } finally {
+            bufferPool.release(bytes);
+        }
     }
 
     @Override
     public String readCString() {
-        int start = buffer.position();
-        int nullPos = findNullByteSimdLong(buffer);
-        int len = nullPos - start;
+        byte[] bytes = bufferPool.get();
+        try {
+            int start = buffer.position();
+            int nullPos = findNullByteSimdLong(buffer);
+            int len = nullPos - start;
 
-        byte[] bytes = new byte[len];
-        buffer.get(bytes);
+            if (len > bytes.length) {
+                bytes = new byte[len];
+            }
+            buffer.get(bytes, 0, len);
 
-        buffer.position(buffer.position() + 1);
-        return new String(bytes, StandardCharsets.UTF_8);
+            buffer.position(buffer.position() + 1);
+            return new String(bytes, 0, len, StandardCharsets.UTF_8);
+        } finally {
+            bufferPool.release(bytes);
+        }
     }
 
     @Override
@@ -94,6 +112,11 @@ public class BsonByteBufferReader implements BsonReader {
     @Override
     public int readInt() {
         return buffer.getInt();
+    }
+
+    @Override
+    public int readInt(int position) {
+        return buffer.getInt(position);
     }
 
     @Override

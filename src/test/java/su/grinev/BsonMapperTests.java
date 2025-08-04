@@ -17,11 +17,11 @@ import java.util.Random;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static su.grinev.test.Command.FOO;
 
-public class ObjectMapperTests {
+public class BsonMapperTests {
 
     @Test
     public void serializeAndDeserializeObjectTest() {
-        ObjectMapper objectMapper = new ObjectMapper(10, 100);
+        BsonMapper bsonMapper = new BsonMapper(10, 100);
 
         VpnRequestDto vpnRequestDto = VpnRequestDto.wrap(FOO, VpnForwardPacketDto.builder()
                         .packet(new byte[1024])
@@ -29,9 +29,9 @@ public class ObjectMapperTests {
 
         vpnRequestDto.setTimestamp(Instant.ofEpochMilli(Instant.now().toEpochMilli()));
 
-        DynamicByteBuffer b = objectMapper.serialize(vpnRequestDto);
+        DynamicByteBuffer b = bsonMapper.serialize(vpnRequestDto);
         b.flip();
-        VpnRequestDto<?> deserialized = objectMapper.deserialize(b.getBuffer(), VpnRequestDto.class);
+        VpnRequestDto<?> deserialized = bsonMapper.deserialize(b.getBuffer(), VpnRequestDto.class);
 
         b.dispose();
         assertEquals(vpnRequestDto, deserialized);
@@ -41,7 +41,7 @@ public class ObjectMapperTests {
     public void performanceTest() {
         Binder binder = new Binder();
         BsonObjectWriter bsonObjectWriter = new BsonObjectWriter(10, 1000);
-        BsonObjectReader bsonObjectReader = new BsonObjectReader( 10, 1000);
+        BsonObjectReader bsonObjectReader = new BsonObjectReader( 10, 1000, 256  * 1024, 1000);
 
         byte[] packet = new byte[128 * 1024];
 

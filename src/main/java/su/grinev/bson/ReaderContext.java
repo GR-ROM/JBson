@@ -1,22 +1,16 @@
 package su.grinev.bson;
 
 import lombok.Data;
+import lombok.NoArgsConstructor;
 import lombok.experimental.Accessors;
 
 @Data
 @Accessors(chain=true)
+@NoArgsConstructor
 public class ReaderContext {
-    private int pos;
+    private int length;
     private Object value;
     private boolean isNestedObjectPending;
-
-    public ReaderContext() {
-        this.pos = 0;
-    }
-
-    public int getPos() {
-        return pos;
-    }
 
     public Object getValue() {
         return value;

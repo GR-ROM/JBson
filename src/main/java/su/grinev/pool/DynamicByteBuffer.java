@@ -108,4 +108,9 @@ public class DynamicByteBuffer implements Disposable {
     public void dispose() {
         this.onDispose.run();
     }
+
+    @Override
+    public void close() {
+        dispose();
+    }
 }

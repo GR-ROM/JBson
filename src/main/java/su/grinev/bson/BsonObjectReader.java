@@ -1,6 +1,7 @@
 package su.grinev.bson;
 
 import lombok.extern.slf4j.Slf4j;
+import su.grinev.exception.BsonException;
 import su.grinev.pool.Pool;
 
 import java.io.IOException;
@@ -12,15 +13,25 @@ import java.util.*;
 @Slf4j
 public class BsonObjectReader {
     private final Pool<ReaderContext> contextPool;
+    private final Pool<byte[]> bufferPool;
+    private final int documentSizeLimit;
 
     public BsonObjectReader(
-            int initialContextStackPoolSize,
-            int maxContextStackPoolSize
+            int initialPoolSize,
+            int maxPoolSize,
+            int documentSizeLimit,
+            int initialCStringSize
     ) {
+        this.documentSizeLimit = documentSizeLimit;
         contextPool = new Pool<>(
-                initialContextStackPoolSize,
-                maxContextStackPoolSize,
+                initialPoolSize,
+                maxPoolSize,
                 ReaderContext::new
+        );
+        bufferPool = new Pool<>(
+                initialPoolSize,
+                maxPoolSize,
+                () -> new byte[initialCStringSize]
         );
     }
 
@@ -28,12 +39,17 @@ public class BsonObjectReader {
         buffer.order(ByteOrder.LITTLE_ENDIAN);
 
         Map<String, Object> rootDocument = new HashMap<>();
-        BsonReader bsonReader = new BsonByteBufferReader(buffer);
+        BsonReader bsonReader = new BsonByteBufferReader(buffer, bufferPool);
         Deque<ReaderContext> stack = new ArrayDeque<>(64);
+
+        int rootDocumentLength = bsonReader.readInt();
+        if (rootDocumentLength > documentSizeLimit) {
+            throw new BsonException("Document is too big");
+        }
 
         ReaderContext ctx = contextPool.get()
                 .setNestedObjectPending(false)
-                .setPos(bsonReader.position())
+                .setLength(rootDocumentLength)
                 .setValue(rootDocument);
         stack.addLast(ctx);
 
@@ -41,15 +57,9 @@ public class BsonObjectReader {
             ctx = stack.getLast();
 
             if (ctx.getValue() instanceof Map m) {
-                if (m.isEmpty()) {
-                    int len = bsonReader.readInt();
-                }
                 while (readElement(bsonReader, ctx, stack, m, null) && !ctx.isNestedObjectPending()) {
                 }
             } else if (ctx.getValue() instanceof List l) {
-                if (l.isEmpty()) {
-                    int len = bsonReader.readInt();
-                }
                 while (readElement(bsonReader, ctx, stack, null, l) && !ctx.isNestedObjectPending()) {
                 }
             }
@@ -102,19 +112,29 @@ public class BsonObjectReader {
             case 0x01 -> value = objectReader.readDouble();
             case 0x02 -> value = objectReader.readString(); // UTF-8 String
             case 0x03 -> { // Embedded document
+                int len =  objectReader.readInt();
+                if (len > ctx.getLength()) {
+                    throw new BsonException("Nested document cannot have more than " + ctx.getLength() + " bytes");
+                }
+
                 value = new HashMap<>();
                 ReaderContext readerContext = contextPool.get()
                         .setNestedObjectPending(false)
-                        .setPos(objectReader.position() - 4)
+                        .setLength(len)
                         .setValue(value);
                 stack.add(readerContext);
                 ctx.setNestedObjectPending(true);
             }
             case 0x04 -> { // Array
+                int len =  objectReader.readInt();
+                if (len > ctx.getLength()) {
+                    throw new BsonException("Nested document cannot have more than " + ctx.getLength() + " bytes");
+                }
+
                 value = new ArrayList<>();
                 ReaderContext readerContext = contextPool.get()
                         .setNestedObjectPending(false)
-                        .setPos(objectReader.position() - 4)
+                        .setLength(len)
                         .setValue(value);
                 stack.add(readerContext);
                 ctx.setNestedObjectPending(true);

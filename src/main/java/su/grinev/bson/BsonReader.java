@@ -8,6 +8,7 @@ public interface BsonReader extends Position {
     float readFloat();
     double readDouble();
     int readInt();
+    int readInt(int position);
     long readLong();
     boolean readBoolean();
     byte[] readBinary();
