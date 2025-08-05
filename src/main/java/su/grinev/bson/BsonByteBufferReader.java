@@ -7,6 +7,7 @@ import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.Arrays;
 
 import static su.grinev.bson.Utility.decodeDecimal128;
 import static su.grinev.bson.Utility.findNullByteSimdLong;
@@ -71,8 +72,10 @@ public class BsonByteBufferReader implements BsonReader {
             len = innerLen;
         }
 
-        byte[] temp = new byte[len];
-        buffer.get(temp);
+        byte[] array = buffer.array();
+        int offset = buffer.arrayOffset() + buffer.position();
+        byte[] temp = Arrays.copyOfRange(array, offset, offset + len);
+        buffer.position(buffer.position() + len);
         return temp;
     }
 

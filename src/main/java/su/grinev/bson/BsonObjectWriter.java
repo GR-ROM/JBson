@@ -84,18 +84,18 @@ public class BsonObjectWriter {
     }
 
     public void serialize(Document document, OutputStream outputStream) throws IOException {
-        DynamicByteBuffer dynamicByteBuffer = serialize(document);
-        dynamicByteBuffer.flip();
-        byte[] buf = bufferPool.get();
-        try {
-            while (dynamicByteBuffer.getBuffer().hasRemaining()) {
-                int chunkSize = Math.min(buf.length, dynamicByteBuffer.getBuffer().remaining());
-                dynamicByteBuffer.getBuffer().get(buf, 0, chunkSize);
-                outputStream.write(buf, 0, chunkSize);
+        try (DynamicByteBuffer dynamicByteBuffer = serialize(document)) {
+            dynamicByteBuffer.flip();
+            byte[] buf = bufferPool.get();
+            try {
+                while (dynamicByteBuffer.getBuffer().hasRemaining()) {
+                    int chunkSize = Math.min(buf.length, dynamicByteBuffer.getBuffer().remaining());
+                    dynamicByteBuffer.getBuffer().get(buf, 0, chunkSize);
+                    outputStream.write(buf, 0, chunkSize);
+                }
+            } finally {
+                bufferPool.release(buf);
             }
-        } finally {
-            bufferPool.release(buf);
-            dynamicByteBuffer.dispose();
         }
     }
 
@@ -129,46 +129,44 @@ public class BsonObjectWriter {
             }
             case Integer i -> {
                 buffer.ensureCapacity( 1 + keyBytes.length + 1 + 4);
-                buffer.put((byte) 0x10); // int32
 
+                buffer.put((byte) 0x10); // int32
                 writeCString(buffer, keyBytes);
                 buffer.putInt(i);
             }
             case Long l -> writeLong(buffer, l, keyBytes);
             case Double d -> {
                 buffer.ensureCapacity( 1 + keyBytes.length + 1 + 8);
-                buffer.put((byte) 0x01); // double
 
+                buffer.put((byte) 0x01); // double
                 writeCString(buffer, keyBytes);
                 buffer.putDouble(d);
             }
             case BigDecimal bigDecimal -> {
                 buffer.ensureCapacity(1 + keyBytes.length + 1);
+
                 buffer.put((byte) 0x13);
                 writeCString(buffer, keyBytes);
-
                 long[] l = encodeDecimal128(bigDecimal);
-
                 buffer.putLong(l[0]);
                 buffer.putLong(l[1]);
             }
             case Boolean b -> {
                 buffer.ensureCapacity( 1 + keyBytes.length + 1 + 1);
-                buffer.put((byte) 0x08); // boolean
 
+                buffer.put((byte) 0x08); // boolean
                 writeCString(buffer, keyBytes);
                 buffer.put((byte) (b ? 1 : 0));
             }
             case null -> {
                 buffer.ensureCapacity( 1 + keyBytes.length + 1);
-                buffer.put((byte) 0x0A); // null
 
+                buffer.put((byte) 0x0A); // null
                 writeCString(buffer, keyBytes);
             }
             case byte[] bytes -> {
                 buffer.ensureCapacity(1 + keyBytes.length + 1 + 4 + 1 + bytes.length);
                 buffer.put((byte) 0x05); // type
-
                 writeCString(buffer, keyBytes);
                 buffer.putInt(bytes.length)      // block length
                         .put((byte) 0x00)           // generic subtype
@@ -205,8 +203,8 @@ public class BsonObjectWriter {
 
     private static void writeLong(DynamicByteBuffer buffer, Long l, byte[] keyBytes) {
         buffer.ensureCapacity( 1 + keyBytes.length + 1 + 8);
-        buffer.put((byte) 0x12); // int64
 
+        buffer.put((byte) 0x12); // int64
         writeCString(buffer, keyBytes);
         buffer.putLong(l);
     }
