@@ -1,5 +1,6 @@
 package su.grinev.bson;
 
+import su.grinev.exception.BsonException;
 import su.grinev.pool.Pool;
 
 import java.math.BigDecimal;
@@ -65,7 +66,7 @@ public class BsonByteBufferReader implements BsonReader {
         if (subtype == 0x02) {
             int innerLen = buffer.getInt();
             if (innerLen != len - 4) {
-                throw new IllegalStateException("Invalid old binary format: length mismatch");
+                throw new BsonException("Invalid old binary format: length mismatch");
             }
             len = innerLen;
         }
