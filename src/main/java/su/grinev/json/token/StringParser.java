@@ -15,7 +15,7 @@ public class StringParser {
         int startPos = buffer.getPos();
         boolean hasEscapeSequence = false;
         int count = 0;
-        while (true) {
+        while (buffer.getPos() + 8 < buffer.size()) {
             long data = buffer.getLong();
             long maskedEscape = escapeMask(data);
             long maskedQuote = quoteMask(data);
