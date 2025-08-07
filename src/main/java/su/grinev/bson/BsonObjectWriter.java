@@ -35,11 +35,11 @@ public class BsonObjectWriter {
         dynamicByteBufferPool = new DisposablePool<>(
                 initialPoolSize,
                 maxPoolSize,
-                () -> new DynamicByteBuffer(8 * 1024));
+                () -> new DynamicByteBuffer(64 * 1024));
         bufferPool = new Pool<>(
                 initialPoolSize,
                 maxPoolSize,
-                () -> new byte[8 * 1024]
+                () -> new byte[64 * 1024]
         );
     }
 
