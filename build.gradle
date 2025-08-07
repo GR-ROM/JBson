@@ -5,7 +5,7 @@ plugins {
 }
 
 group = 'su.grinev'
-version = '0.2.5'
+version = '0.2.6'
 
 repositories {
     mavenCentral()
@@ -35,10 +35,10 @@ publishing {
 }
 
 dependencies {
-    implementation("org.projectlombok:lombok:1.18.38")
+    implementation 'org.projectlombok:lombok:1.18.38'
     annotationProcessor 'org.projectlombok:lombok:1.18.38'
     implementation 'org.slf4j:slf4j-api:2.0.13'
-    runtimeOnly 'ch.qos.logback:logback-classic:1.5.13'
+    runtimeOnly 'org.slf4j:slf4j-simple:2.0.13'
 
     testImplementation 'org.mongodb:bson:4.10.2'
     testImplementation platform('org.junit:junit-bom:5.10.0')
