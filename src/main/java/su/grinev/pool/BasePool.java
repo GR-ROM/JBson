@@ -28,6 +28,7 @@ public abstract class BasePool<T> {
                         isWaiting = true;
                         pool.wait();
                     } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
                         throw new RuntimeException(e);
                     }
                 }

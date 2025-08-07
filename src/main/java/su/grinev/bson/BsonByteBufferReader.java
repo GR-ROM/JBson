@@ -14,49 +14,51 @@ import static su.grinev.bson.Utility.findNullByteSimdLong;
 
 public class BsonByteBufferReader implements BsonReader {
     private final ByteBuffer buffer;
-    private final Pool<byte[]> bufferPool;
+    // private final Pool<byte[]> bufferPool;
 
     public BsonByteBufferReader(ByteBuffer buffer, Pool<byte[]> bufferPool) {
         this.buffer = buffer;
-        this.bufferPool = bufferPool;
+       // this.bufferPool = bufferPool;
     }
 
     @Override
     public String readString() {
-        byte[] bytes = bufferPool.get();
-        try {
+        //byte[] bytes = bufferPool.get();
+        //try {
             int len = buffer.getInt();
 
-            if (len > bytes.length) {
-                bytes = new byte[len - 1];
-            }
+        //    if (len > bytes.length) {
+         //       bytes = new byte[len - 1];
+         //   }
+            byte[] bytes = new byte[len - 1];
             buffer.get(bytes, 0, len - 1);
             buffer.position(buffer.position() + 1);
 
             return new String(bytes, 0, len - 1, StandardCharsets.UTF_8);
-        } finally {
-            bufferPool.release(bytes);
-        }
+        //} finally {
+        //    bufferPool.release(bytes);
+        //}
     }
 
     @Override
     public String readCString() {
-        byte[] bytes = bufferPool.get();
-        try {
+        //byte[] bytes = bufferPool.get();
+        //try {
             int start = buffer.position();
             int nullPos = findNullByteSimdLong(buffer);
             int len = nullPos - start;
 
-            if (len > bytes.length) {
-                bytes = new byte[len];
-            }
+        //    if (len > bytes.length) {
+        //        bytes = new byte[len];
+        //    }
+            byte[] bytes = new byte[len];
             buffer.get(bytes, 0, len);
 
             buffer.position(buffer.position() + 1);
             return new String(bytes, 0, len, StandardCharsets.UTF_8);
-        } finally {
-            bufferPool.release(bytes);
-        }
+        //} finally {
+        //    bufferPool.release(bytes);
+        //}
     }
 
     @Override
