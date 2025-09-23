@@ -10,8 +10,6 @@ import lombok.experimental.Accessors;
 public class ReaderContext {
     private int length;
     private Object value;
-    private boolean isNestedObjectPending;
-
     public Object getValue() {
         return value;
     }

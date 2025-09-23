@@ -48,27 +48,22 @@ public class BsonObjectReader {
         }
 
         ReaderContext ctx = contextPool.get()
-                .setNestedObjectPending(false)
                 .setLength(rootDocumentLength)
                 .setValue(rootDocument);
-        stack.addLast(ctx);
+        stack.addFirst(ctx);
 
         while (!stack.isEmpty()) {
-            ctx = stack.getLast();
+            ctx = stack.getFirst();
 
             if (ctx.getValue() instanceof Map m) {
-                while (readElement(bsonReader, ctx, stack, m, null) && !ctx.isNestedObjectPending()) {
-                }
+                while (readElement(bsonReader, ctx, stack, m, null)) {}
             } else if (ctx.getValue() instanceof List l) {
-                while (readElement(bsonReader, ctx, stack, null, l) && !ctx.isNestedObjectPending()) {
-                }
+                while (readElement(bsonReader, ctx, stack, null, l)) {}
             }
 
-            if (!ctx.isNestedObjectPending()) {
-                stack.removeLast();
+            if (ctx == stack.getFirst()) {
+                stack.removeFirst();
                 contextPool.release(ctx);
-            } else {
-                ctx.setNestedObjectPending(false);
             }
         }
 
@@ -119,11 +114,11 @@ public class BsonObjectReader {
 
                 value = new HashMap<>();
                 ReaderContext readerContext = contextPool.get()
-                        .setNestedObjectPending(false)
                         .setLength(len)
                         .setValue(value);
-                stack.add(readerContext);
-                ctx.setNestedObjectPending(true);
+                stack.addFirst(readerContext);
+                putValue(map, list, key, value);
+                return false;
             }
             case 0x04 -> { // Array
                 int len =  objectReader.readInt();
@@ -133,11 +128,11 @@ public class BsonObjectReader {
 
                 value = new ArrayList<>();
                 ReaderContext readerContext = contextPool.get()
-                        .setNestedObjectPending(false)
                         .setLength(len)
                         .setValue(value);
-                stack.add(readerContext);
-                ctx.setNestedObjectPending(true);
+                stack.addFirst(readerContext);
+                putValue(map, list, key, value);
+                return false;
             }
             case 0x05 -> value = objectReader.readBinary();
             case 0x07 -> value = objectReader.readObjectId();
@@ -150,11 +145,15 @@ public class BsonObjectReader {
             default -> throw new IllegalArgumentException("Unsupported BSON type: 0x" + Integer.toHexString(type));
         }
 
+        putValue(map, list, key, value);
+        return true;
+    }
+
+    private static void putValue(Map<String, Object> map, List<Object> list, String key, Object value) {
         if (map != null) {
             map.put(key, value);
         } else if (list != null) {
             list.add(value);
         }
-        return true;
     }
 }

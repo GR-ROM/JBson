@@ -14,9 +14,7 @@ public final class WriterContext {
     int idx;
     int lengthPos = 0;
     int startPos = 0;
-    boolean isNestedObjectPending;
-    List<Map.Entry<String, Object>> mapEntries;
-    List<Object> listEntries;
+    Map.Entry<String, Object>[] mapEntries;;
 
     public static WriterContext fillForDocument(
             WriterContext writerContext,
@@ -24,11 +22,9 @@ public final class WriterContext {
             Map<String, Object> value
             ) {
         return writerContext
-                .setNestedObjectPending(false)
                 .setLengthPos(lengthPos)
                 .setIdx(0)
-                .setMapEntries(value.entrySet().stream().toList())
-                .setListEntries(null);
+                .setMapEntries(objectToMapEntries(value));
     }
 
     public static WriterContext fillForArray(
@@ -37,10 +33,33 @@ public final class WriterContext {
             List<Object> value
     ) {
         return writerContext
-                .setNestedObjectPending(false)
                 .setLengthPos(lengthPos)
                 .setIdx(0)
-                .setMapEntries(null)
-                .setListEntries(value);
+                .setMapEntries(listToMapEntries(value));
+    }
+
+    private static Map.Entry<String, Object>[] objectToMapEntries(Map<String, Object> value) {
+        Map.Entry<String, Object>[] mapEntries = new Map.Entry[value.size()];
+        int i = 0;
+        for (Map.Entry<String, Object> entry : value.entrySet()) {
+            mapEntries[i++] =   Map.entry(entry.getKey(), entry.getValue() == null ? new NullObject() : entry.getValue());
+        }
+
+        return mapEntries;
+    }
+
+    private static Map.Entry<String, Object>[] listToMapEntries(List<Object> value) {
+        Map.Entry<String, Object>[] mapEntries = new Map.Entry[value.size()];
+        int i = 0;
+        for (Object object : value) {
+            mapEntries[i] = Map.entry(Integer.toString(i), object == null ? new NullObject() : object);
+            i++;
+        }
+
+        return mapEntries;
+    }
+
+    public static class NullObject {
+
     }
 }
