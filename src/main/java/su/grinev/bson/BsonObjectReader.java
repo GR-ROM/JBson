@@ -9,6 +9,7 @@ import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @Slf4j
 public class BsonObjectReader {
@@ -52,13 +53,32 @@ public class BsonObjectReader {
                 .setValue(rootDocument);
         stack.addFirst(ctx);
 
+
         while (!stack.isEmpty()) {
             ctx = stack.getFirst();
+            AtomicBoolean needBreak = new AtomicBoolean(false);
+            if (ctx.getValue() instanceof Map map) {
+                while (!needBreak.get()) {
+                    int type = bsonReader.readByte();
+                    if (type == 0) {
+                        break;
+                    }
+                    String key = bsonReader.readCString();
+                    Object value = doReadValue(bsonReader, ctx, stack, type, needBreak);
 
-            if (ctx.getValue() instanceof Map m) {
-                while (readElement(bsonReader, ctx, stack, m, null)) {}
-            } else if (ctx.getValue() instanceof List l) {
-                while (readElement(bsonReader, ctx, stack, null, l)) {}
+                    map.put(key, value);
+                }
+            } else if (ctx.getValue() instanceof List list) {
+               while (!needBreak.get()) {
+                   int type = bsonReader.readByte();
+                   if (type == 0) {
+                       break;
+                   }
+                   String key = bsonReader.readCString();
+                   Object value = doReadValue(bsonReader, ctx, stack, type, needBreak);
+
+                   list.add(Integer.parseInt(key), value);
+               }
             }
 
             if (ctx == stack.getFirst()) {
@@ -93,32 +113,23 @@ public class BsonObjectReader {
         return deserialize(buffer);
     }
 
-    private boolean readElement(BsonReader objectReader, ReaderContext ctx, Deque<ReaderContext> stack, Map<String, Object> map, List<Object> list) {
-        Object value;
-
-        int type = objectReader.readByte();
-        if (type == 0) {
-            return false;
-        }
-
-        String key = objectReader.readCString();
-
-        switch (type) {
-            case 0x01 -> value = objectReader.readDouble();
-            case 0x02 -> value = objectReader.readString(); // UTF-8 String
+    private Object doReadValue(BsonReader objectReader, ReaderContext ctx, Deque<ReaderContext> stack, int type, AtomicBoolean needBreak) {
+        return switch (type) {
+            case 0x01 -> objectReader.readDouble();
+            case 0x02 -> objectReader.readString(); // UTF-8 String
             case 0x03 -> { // Embedded document
                 int len =  objectReader.readInt();
                 if (len > ctx.getLength()) {
                     throw new BsonException("Nested document cannot have more than " + ctx.getLength() + " bytes");
                 }
 
-                value = new HashMap<>();
+                Object value = new HashMap<>();
                 ReaderContext readerContext = contextPool.get()
                         .setLength(len)
                         .setValue(value);
                 stack.addFirst(readerContext);
-                putValue(map, list, key, value);
-                return false;
+                needBreak.set(true);
+                yield value;
             }
             case 0x04 -> { // Array
                 int len =  objectReader.readInt();
@@ -126,34 +137,23 @@ public class BsonObjectReader {
                     throw new BsonException("Nested document cannot have more than " + ctx.getLength() + " bytes");
                 }
 
-                value = new ArrayList<>();
+                Object value = new ArrayList<>();
                 ReaderContext readerContext = contextPool.get()
                         .setLength(len)
                         .setValue(value);
                 stack.addFirst(readerContext);
-                putValue(map, list, key, value);
-                return false;
+                needBreak.set(true);
+                yield value;
             }
-            case 0x05 -> value = objectReader.readBinary();
-            case 0x07 -> value = objectReader.readObjectId();
-            case 0x08 -> value = objectReader.readBoolean();
-            case 0x09 -> value = objectReader.readDateTime();
-            case 0x0A -> value = null;
-            case 0x10 -> value = objectReader.readInt();
-            case 0x12 -> value = objectReader.readLong();
-            case 0x13 -> value = objectReader.readDecimal128();
+            case 0x05 -> objectReader.readBinary();
+            case 0x07 -> objectReader.readObjectId();
+            case 0x08 -> objectReader.readBoolean();
+            case 0x09 -> objectReader.readDateTime();
+            case 0x0A -> null;
+            case 0x10 -> objectReader.readInt();
+            case 0x12 -> objectReader.readLong();
+            case 0x13 -> objectReader.readDecimal128();
             default -> throw new IllegalArgumentException("Unsupported BSON type: 0x" + Integer.toHexString(type));
-        }
-
-        putValue(map, list, key, value);
-        return true;
-    }
-
-    private static void putValue(Map<String, Object> map, List<Object> list, String key, Object value) {
-        if (map != null) {
-            map.put(key, value);
-        } else if (list != null) {
-            list.add(value);
-        }
+        };
     }
 }

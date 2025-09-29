@@ -10,7 +10,6 @@ import java.time.Instant;
 import java.util.Arrays;
 
 import static su.grinev.bson.Utility.decodeDecimal128;
-import static su.grinev.bson.Utility.findNullByteSimdLong;
 
 public class BsonByteBufferReader implements BsonReader {
     private final ByteBuffer buffer;
@@ -47,14 +46,14 @@ public class BsonByteBufferReader implements BsonReader {
     @Override
     public String readCString() {
         byte[] bytes = bufferPool.get();
+
         try {
             int start = buffer.position();
-            int nullPos = findNullByteSimdLong(buffer);
-            int len = nullPos - start;
+            int len = 0;
+            for (; buffer.get(start++) != 0; len++) {}
 
             bytes = ensureBufferCapacity(bytes, len);
             buffer.get(bytes, 0, len);
-
             buffer.position(buffer.position() + 1);
             return new String(bytes, 0, len, StandardCharsets.UTF_8);
         } finally {
