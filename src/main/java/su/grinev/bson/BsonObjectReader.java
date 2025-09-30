@@ -10,12 +10,14 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Function;
 
 @Slf4j
 public class BsonObjectReader {
     private final Pool<ReaderContext> contextPool;
     private final Pool<byte[]> bufferPool;
     private final int documentSizeLimit;
+    private Map<Integer, Function<ByteBuffer, Object>> customDeserializer = new HashMap<>();
 
     public BsonObjectReader(
             int initialPoolSize,
@@ -153,7 +155,7 @@ public class BsonObjectReader {
             case 0x10 -> objectReader.readInt();
             case 0x12 -> objectReader.readLong();
             case 0x13 -> objectReader.readDecimal128();
-            default -> throw new IllegalArgumentException("Unsupported BSON type: 0x" + Integer.toHexString(type));
+            default -> customDeserializer.computeIfAbsent(type, _ -> { throw new IllegalArgumentException("Unsupported BSON type: 0x" + Integer.toHexString(type)); });
         };
     }
 }
