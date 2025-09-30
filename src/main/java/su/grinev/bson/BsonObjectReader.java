@@ -55,10 +55,12 @@ public class BsonObjectReader {
                 .setValue(rootDocument);
         stack.addFirst(ctx);
 
+        AtomicBoolean needBreak = new AtomicBoolean(false);
 
         while (!stack.isEmpty()) {
+            needBreak.set(false);
             ctx = stack.getFirst();
-            AtomicBoolean needBreak = new AtomicBoolean(false);
+
             if (ctx.getValue() instanceof Map map) {
                 while (!needBreak.get()) {
                     int type = bsonReader.readByte();
