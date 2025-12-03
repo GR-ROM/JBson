@@ -23,13 +23,20 @@ publishing {
     }
 
     repositories {
-        maven {
-            name = "GitHubPackages"
-            url = uri("https://maven.pkg.github.com/GR-ROM/JBson")
-            credentials {
-                username = project.findProperty("gpr.user") ?: System.getenv("USERNAME")
-                password = project.findProperty("gpr.key") ?: System.getenv("TOKEN")
+        def githubActor = System.getenv("GITHUB_ACTOR")
+        def githubToken = System.getenv("GITHUB_TOKEN")
+
+        if (githubActor && githubToken) {
+            maven {
+                name = "GitHubPackages"
+                url = uri("https://maven.pkg.github.com/GR-ROM/JBson")
+                credentials {
+                    username = githubActor
+                    password = githubToken
+                }
             }
+        } else {
+            logger.lifecycle("GITHUB_ACTOR/GITHUB_TOKEN are not set - skipping GitHubPackages repo")
         }
     }
 }
