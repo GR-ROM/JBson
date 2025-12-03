@@ -4,8 +4,8 @@ plugins {
     id 'maven-publish'
 }
 
-group = 'su.grinev'
-version = '0.2.12'
+group = "su.grinev"
+version = project.findProperty("version") ?: "0.1.0-SNAPSHOT"
 
 repositories {
     mavenCentral()
