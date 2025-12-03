@@ -157,7 +157,7 @@ public class BsonObjectReader {
             case 0x10 -> objectReader.readInt();
             case 0x12 -> objectReader.readLong();
             case 0x13 -> objectReader.readDecimal128();
-            default -> customDeserializer.computeIfAbsent(type, _ -> { throw new IllegalArgumentException("Unsupported BSON type: 0x" + Integer.toHexString(type)); });
+            default -> customDeserializer.computeIfAbsent(type, i -> { throw new IllegalArgumentException("Unsupported BSON type: 0x" + Integer.toHexString(type)); });
         };
     }
 }
