@@ -1,5 +1,6 @@
 package su.grinev;
 
+import lombok.Getter;
 import su.grinev.bson.BsonObjectReader;
 import su.grinev.bson.BsonObjectWriter;
 import su.grinev.bson.Document;
@@ -10,6 +11,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
 
+@Getter
 public class BsonMapper {
     public final int initialPoolSize;
     public final int maxPoolSize;
@@ -18,11 +20,11 @@ public class BsonMapper {
     private final BsonObjectWriter bsonObjectWriter;
     private final BsonObjectReader bsonObjectReader;
 
-    public BsonMapper(int initialPoolSize, int maxPoolSize) {
+    public BsonMapper(int initialPoolSize, int maxPoolSize, int documentSize, int initialCStringSize) {
         this.initialPoolSize = initialPoolSize;
         this.maxPoolSize = maxPoolSize;
-        this.bsonObjectWriter = new BsonObjectWriter(initialPoolSize, maxPoolSize);
-        this.bsonObjectReader = new BsonObjectReader(initialPoolSize, maxPoolSize, 65 * 1024, 1024);
+        this.bsonObjectWriter = new BsonObjectWriter(initialPoolSize, maxPoolSize, documentSize);
+        this.bsonObjectReader = new BsonObjectReader(initialPoolSize, maxPoolSize, documentSize, initialCStringSize);
     }
 
     public DynamicByteBuffer serialize(Object o) {

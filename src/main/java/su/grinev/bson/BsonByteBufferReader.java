@@ -7,7 +7,6 @@ import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
-import java.util.Arrays;
 
 import static su.grinev.bson.Utility.decodeDecimal128;
 
@@ -24,13 +23,13 @@ public class BsonByteBufferReader implements BsonReader {
     public String readString() {
         byte[] bytes = bufferPool.get();
         try {
-            int len = buffer.getInt();
+            int len = buffer.getInt() - 1;
 
-            bytes = ensureBufferCapacity(bytes, len - 1);
-            buffer.get(bytes, 0, len - 1);
+            bytes = ensureBufferCapacity(bytes, len);
+            buffer.get(bytes, 0, len);
             buffer.position(buffer.position() + 1);
 
-            return new String(bytes, 0, len - 1, StandardCharsets.UTF_8);
+            return new String(bytes, 0, len, StandardCharsets.UTF_8);
         } finally {
             bufferPool.release(bytes);
         }
@@ -48,9 +47,8 @@ public class BsonByteBufferReader implements BsonReader {
         byte[] bytes = bufferPool.get();
 
         try {
-            int start = buffer.position();
             int len = 0;
-            for (; buffer.get(start++) != 0; len++) {}
+            for (int i = buffer.position(); buffer.get(i++) != 0; len++) {}
 
             bytes = ensureBufferCapacity(bytes, len);
             buffer.get(bytes, 0, len);
@@ -74,10 +72,8 @@ public class BsonByteBufferReader implements BsonReader {
             len = innerLen;
         }
 
-        byte[] array = buffer.array();
-        int offset = buffer.arrayOffset() + buffer.position();
-        byte[] temp = Arrays.copyOfRange(array, offset, offset + len);
-        buffer.position(buffer.position() + len);
+        byte[] temp = new byte[len];
+        buffer.get(temp, 0, len);
         return temp;
     }
 

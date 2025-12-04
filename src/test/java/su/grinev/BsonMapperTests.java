@@ -21,11 +21,15 @@ public class BsonMapperTests {
 
     @Test
     public void serializeAndDeserializeObjectTest() {
-        BsonMapper bsonMapper = new BsonMapper(10, 100);
+        BsonMapper bsonMapper = new BsonMapper(10, 100, 2048, 512);
 
-        VpnRequestDto vpnRequestDto = VpnRequestDto.wrap(FOO, VpnForwardPacketDto.builder()
+        VpnRequestDto<VpnForwardPacketDto> vpnRequestDto = VpnRequestDto.wrap(FOO, VpnForwardPacketDto.builder()
                 .packet(new byte[1024])
                 .build());
+
+        for (int i = 0; i < vpnRequestDto.getData().getPacket().length; i++) {
+            vpnRequestDto.getData().getPacket()[i] = (byte) i;
+        }
 
         vpnRequestDto.setTimestamp(Instant.ofEpochMilli(Instant.now().toEpochMilli()));
 
@@ -40,8 +44,8 @@ public class BsonMapperTests {
     @Test
     public void performanceTest() {
         Binder binder = new Binder();
-        BsonObjectWriter bsonObjectWriter = new BsonObjectWriter(10, 1000);
-        BsonObjectReader bsonObjectReader = new BsonObjectReader( 10, 1000, 256  * 1024, 1000);
+        BsonObjectWriter bsonObjectWriter = new BsonObjectWriter(10, 100, 129 * 1024);
+        BsonObjectReader bsonObjectReader = new BsonObjectReader( 10, 1000, 129  * 1024, 128);
 
         List<String> test = new ArrayList<>();
         Random random = new Random();
