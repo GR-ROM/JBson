@@ -6,7 +6,6 @@ A blazing-fast, minimal-overhead BSON serializer and deserializer for Java. Desi
 [![Build](https://img.shields.io/github/actions/workflow/status/GR-ROM/JBson/build.yml?branch=main)](https://github.com/GR-ROM/JBson/actions)
 [![License](https://img.shields.io/github/license/GR-ROM/JBson)](LICENSE)
 [![Version](https://img.shields.io/github/v/tag/GR-ROM/JBson)](https://github.com/GR-ROM/JBson/releases)
-[![](https://jitpack.io/v/GR-ROM/JBson.svg)](https://jitpack.io/#GR-ROM/JBson)
 
 ## ⚡ Key Features
 
@@ -21,10 +20,3 @@ A blazing-fast, minimal-overhead BSON serializer and deserializer for Java. Desi
 ## 📦 Installation
 
 Coming soon to Maven Central...
-
-## JitPack
-
-### gradle.build
-dependencies {
-implementation("com.github.GR-ROM:JBson:0.1.1")
-}
