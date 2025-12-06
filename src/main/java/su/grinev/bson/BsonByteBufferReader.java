@@ -60,7 +60,7 @@ public class BsonByteBufferReader implements BsonReader {
     }
 
     @Override
-    public byte[] readBinary() {
+    public byte[] readBinaryAsArray() {
         int len = buffer.getInt();
         byte subtype = buffer.get();
 
@@ -75,6 +75,23 @@ public class BsonByteBufferReader implements BsonReader {
         byte[] temp = new byte[len];
         buffer.get(temp, 0, len);
         return temp;
+    }
+
+    @Override
+    public ByteBuffer readBinary() {
+        int len = buffer.getInt();
+        byte subtype = buffer.get();
+
+        if (subtype == 0x02) {
+            int innerLen = buffer.getInt();
+            if (innerLen != len - 4) {
+                throw new BsonException("Invalid old binary format: length mismatch");
+            }
+            len = innerLen;
+        }
+        ByteBuffer buffer1 = buffer.slice(buffer.position(), len);
+        buffer.position(buffer.position() + len);
+        return buffer1;
     }
 
     @Override

@@ -8,6 +8,7 @@ import su.grinev.pool.DynamicByteBuffer;
 import su.grinev.test.VpnForwardPacketDto;
 import su.grinev.test.VpnRequestDto;
 
+import java.nio.ByteBuffer;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -22,13 +23,14 @@ public class BsonMapperTests {
     @Test
     public void serializeAndDeserializeObjectTest() {
         BsonMapper bsonMapper = new BsonMapper(10, 100, 2048, 512);
+        bsonMapper.getBsonObjectReader().setReadBinaryAsByteArray(false);
 
         VpnRequestDto<VpnForwardPacketDto> vpnRequestDto = VpnRequestDto.wrap(FOO, VpnForwardPacketDto.builder()
-                .packet(new byte[1024])
+                .packet(ByteBuffer.allocateDirect(1024))
                 .build());
 
-        for (int i = 0; i < vpnRequestDto.getData().getPacket().length; i++) {
-            vpnRequestDto.getData().getPacket()[i] = (byte) i;
+        for (int i = 0; i < vpnRequestDto.getData().getPacket().limit(); i++) {
+            vpnRequestDto.getData().getPacket().put(i, (byte) i);
         }
 
         vpnRequestDto.setTimestamp(Instant.ofEpochMilli(Instant.now().toEpochMilli()));
@@ -46,6 +48,7 @@ public class BsonMapperTests {
         Binder binder = new Binder();
         BsonObjectWriter bsonObjectWriter = new BsonObjectWriter(10, 100, 129 * 1024);
         BsonObjectReader bsonObjectReader = new BsonObjectReader( 10, 1000, 129  * 1024, 128);
+        bsonObjectReader.setReadBinaryAsByteArray(false);
 
         List<String> test = new ArrayList<>();
         Random random = new Random();
@@ -55,7 +58,7 @@ public class BsonMapperTests {
         }
 
         VpnRequestDto<VpnForwardPacketDto> requestDto = VpnRequestDto.wrap(FOO, VpnForwardPacketDto.builder()
-                .packet(new byte[128 * 1024])
+                .packet(ByteBuffer.allocateDirect(1024))
                 .build());
 
         List<Long> serializationTime = new ArrayList<>();

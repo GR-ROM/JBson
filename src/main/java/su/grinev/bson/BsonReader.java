@@ -1,6 +1,7 @@
 package su.grinev.bson;
 
 import java.math.BigDecimal;
+import java.nio.ByteBuffer;
 import java.time.Instant;
 
 public interface BsonReader extends Position {
@@ -11,7 +12,8 @@ public interface BsonReader extends Position {
     int readInt(int position);
     long readLong();
     boolean readBoolean();
-    byte[] readBinary();
+    byte[] readBinaryAsArray();
+    ByteBuffer readBinary();
     byte readByte();
     String readObjectId();
     Instant readDateTime();

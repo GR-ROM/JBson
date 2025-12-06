@@ -8,6 +8,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.math.BigDecimal;
+import java.nio.ByteBuffer;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.*;
@@ -210,7 +211,9 @@ public class Binder {
                 || type == Float[].class
                 || type == Double[].class
                 || type == Character[].class
-                || type == String[].class;
+                || type == String[].class
+                || type == Enum.class
+                || type == ByteBuffer.class;
     }
 
     private Type resolveListItemType(Type listType) {

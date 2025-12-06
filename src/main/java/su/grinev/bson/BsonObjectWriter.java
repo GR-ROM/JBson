@@ -7,6 +7,7 @@ import su.grinev.pool.Pool;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.math.BigDecimal;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayDeque;
@@ -111,6 +112,14 @@ public class BsonObjectWriter {
                         buffer.putInt(bytes.length)      // block length
                                 .put((byte) 0x00)           // generic subtype
                                 .put(bytes);               // data
+                    }
+                    case ByteBuffer byteBuffer -> {
+                        buffer.put((byte) 0x05); // type
+                        writeCString(buffer, keyBytes);
+                        buffer.putInt(byteBuffer.limit())// block length
+                                .put((byte) 0x00)        // generic subtype
+                                .getBuffer().put(byteBuffer);  // data
+                        byteBuffer.rewind();
                     }
                     case Instant i -> {
                         buffer.ensureCapacity(1 + keyBytes.length + 1 + 8);

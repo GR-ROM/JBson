@@ -1,5 +1,6 @@
 package su.grinev.bson;
 
+import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import su.grinev.exception.BsonException;
 import su.grinev.pool.Pool;
@@ -17,6 +18,8 @@ public class BsonObjectReader {
     private final Pool<ReaderContext> contextPool;
     private final Pool<byte[]> bufferPool;
     private final int documentSizeLimit;
+    @Setter
+    private boolean readBinaryAsByteArray = true;
     private Map<Integer, Function<ByteBuffer, Object>> customDeserializer = new HashMap<>();
 
     public BsonObjectReader(
@@ -149,7 +152,13 @@ public class BsonObjectReader {
                 needBreak.set(true);
                 yield value;
             }
-            case 0x05 -> objectReader.readBinary();
+            case 0x05 -> {
+                if (readBinaryAsByteArray) {
+                    yield objectReader.readBinaryAsArray();
+                } else {
+                    yield objectReader.readBinary();
+                }
+            }
             case 0x07 -> objectReader.readObjectId();
             case 0x08 -> objectReader.readBoolean();
             case 0x09 -> objectReader.readDateTime();
