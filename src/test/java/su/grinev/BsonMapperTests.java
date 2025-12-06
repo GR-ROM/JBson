@@ -46,7 +46,7 @@ public class BsonMapperTests {
     @Test
     public void performanceTest() {
         Binder binder = new Binder();
-        BsonObjectWriter bsonObjectWriter = new BsonObjectWriter(10, 100, 129 * 1024);
+        BsonObjectWriter bsonObjectWriter = new BsonObjectWriter(10, 100, 129 * 1024, true);
         BsonObjectReader bsonObjectReader = new BsonObjectReader( 10, 1000, 129  * 1024, 128);
         bsonObjectReader.setReadBinaryAsByteArray(false);
 

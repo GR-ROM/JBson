@@ -27,10 +27,11 @@ public class BsonObjectWriter {
     public BsonObjectWriter(
             int initialPoolSize,
             int maxPoolSize,
-            int documentSize
+            int documentSize,
+            boolean directBuffers
     ) {
         writerContextPool = new Pool<>(initialPoolSize, maxPoolSize, WriterContext::new);
-        dynamicByteBufferPool = new DisposablePool<>(initialPoolSize, maxPoolSize, () -> new DynamicByteBuffer(documentSize));
+        dynamicByteBufferPool = new DisposablePool<>(initialPoolSize, maxPoolSize, () -> new DynamicByteBuffer(documentSize, directBuffers));
         bufferPool = new Pool<>(initialPoolSize, maxPoolSize, () -> new byte[documentSize]);
     }
 
