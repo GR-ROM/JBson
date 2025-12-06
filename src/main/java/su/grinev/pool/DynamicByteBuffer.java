@@ -6,16 +6,26 @@ import java.nio.ByteOrder;
 public class DynamicByteBuffer implements Disposable {
     private Runnable onDispose;
     private ByteBuffer buffer;
+    private boolean direct;
 
-    public DynamicByteBuffer(int capacity) {
-        this.buffer = ByteBuffer.allocate(capacity);
+    public DynamicByteBuffer(int capacity, boolean direct) {
+        this.direct = direct;
+        if (direct) {
+            this.buffer = ByteBuffer.allocateDirect(capacity);
+        } else {
+            this.buffer = ByteBuffer.allocate(capacity);
+        }
         initBuffer();
     }
 
     public void ensureCapacity(int additionalCapacity) {
         if (buffer.remaining() < additionalCapacity) {
             ByteBuffer oldBuffer = buffer;
-            buffer = ByteBuffer.allocate(Math.max(buffer.capacity() * 2, buffer.remaining() + additionalCapacity));
+            if (direct) {
+                buffer = ByteBuffer.allocateDirect(Math.max(buffer.capacity() * 2, buffer.remaining() + additionalCapacity));
+            } else {
+                buffer = ByteBuffer.allocate(Math.max(buffer.capacity() * 2, buffer.remaining() + additionalCapacity));
+            }
             initBuffer();
             buffer.put(oldBuffer.flip());
         }
@@ -96,6 +106,11 @@ public class DynamicByteBuffer implements Disposable {
 
     public DynamicByteBuffer putDouble(double d) {
         buffer.putDouble(d);
+        return this;
+    }
+
+    public DynamicByteBuffer putByteBuffer(ByteBuffer byteBuffer) {
+        buffer.put(byteBuffer);
         return this;
     }
 

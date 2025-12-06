@@ -17,7 +17,7 @@ public class BsonObjectWriterTests {
 
     @BeforeEach
     void setUp() {
-        writer = new BsonObjectWriter(1000, 10000, 8 * 1024);
+        writer = new BsonObjectWriter(1000, 10000, 8 * 1024, true);
     }
 
     private byte[] toByteArray(ByteBuffer buffer) {

@@ -20,6 +20,7 @@ import static su.grinev.bson.WriterContext.fillForArray;
 import static su.grinev.bson.WriterContext.fillForDocument;
 
 public class BsonObjectWriter {
+
     private final Pool<WriterContext> writerContextPool;
     private final DisposablePool<DynamicByteBuffer> dynamicByteBufferPool;
     private final Pool<byte[]> bufferPool;
@@ -27,10 +28,11 @@ public class BsonObjectWriter {
     public BsonObjectWriter(
             int initialPoolSize,
             int maxPoolSize,
-            int documentSize
+            int documentSize,
+            boolean directBuffers
     ) {
         writerContextPool = new Pool<>(initialPoolSize, maxPoolSize, WriterContext::new);
-        dynamicByteBufferPool = new DisposablePool<>(initialPoolSize, maxPoolSize, () -> new DynamicByteBuffer(documentSize));
+        dynamicByteBufferPool = new DisposablePool<>(initialPoolSize, maxPoolSize, () -> new DynamicByteBuffer(documentSize, directBuffers));
         bufferPool = new Pool<>(initialPoolSize, maxPoolSize, () -> new byte[documentSize]);
     }
 
@@ -114,12 +116,13 @@ public class BsonObjectWriter {
                                 .put(bytes);               // data
                     }
                     case ByteBuffer byteBuffer -> {
+                        buffer.ensureCapacity(1 + keyBytes.length + 1 + 4 + 1 + byteBuffer.limit());
                         buffer.put((byte) 0x05); // type
                         writeCString(buffer, keyBytes);
                         buffer.putInt(byteBuffer.limit())// block length
                                 .put((byte) 0x00)        // generic subtype
                                 .getBuffer().put(byteBuffer);  // data
-                        byteBuffer.rewind();
+                        byteBuffer.position(0);
                     }
                     case Instant i -> {
                         buffer.ensureCapacity(1 + keyBytes.length + 1 + 8);

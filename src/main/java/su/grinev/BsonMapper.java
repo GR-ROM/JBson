@@ -23,7 +23,7 @@ public class BsonMapper {
     public BsonMapper(int initialPoolSize, int maxPoolSize, int documentSize, int initialCStringSize) {
         this.initialPoolSize = initialPoolSize;
         this.maxPoolSize = maxPoolSize;
-        this.bsonObjectWriter = new BsonObjectWriter(initialPoolSize, maxPoolSize, documentSize);
+        this.bsonObjectWriter = new BsonObjectWriter(initialPoolSize, maxPoolSize, documentSize, true);
         this.bsonObjectReader = new BsonObjectReader(initialPoolSize, maxPoolSize, documentSize, initialCStringSize);
     }
 
