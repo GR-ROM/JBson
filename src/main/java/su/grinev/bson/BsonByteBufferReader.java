@@ -1,6 +1,8 @@
 package su.grinev.bson;
 
 import su.grinev.exception.BsonException;
+import su.grinev.pool.DisposablePool;
+import su.grinev.pool.DynamicByteBuffer;
 import su.grinev.pool.Pool;
 
 import java.math.BigDecimal;
@@ -13,10 +15,12 @@ import static su.grinev.bson.Utility.decodeDecimal128;
 public class BsonByteBufferReader implements BsonReader {
     private final ByteBuffer buffer;
     private final Pool<byte[]> bufferPool;
+    private final Pool<ByteBuffer> byteBufferPool;
 
-    public BsonByteBufferReader(ByteBuffer buffer, Pool<byte[]> bufferPool) {
+    public BsonByteBufferReader(ByteBuffer buffer, Pool<byte[]> bufferPool, Pool<ByteBuffer> binaryPacketPool) {
         this.buffer = buffer;
         this.bufferPool = bufferPool;
+        this.byteBufferPool = binaryPacketPool;
     }
 
     @Override
@@ -89,9 +93,15 @@ public class BsonByteBufferReader implements BsonReader {
             }
             len = innerLen;
         }
-        ByteBuffer buffer1 = buffer.slice(buffer.position(), len);
-        buffer.position(buffer.position() + len);
-        return buffer1;
+
+        ByteBuffer buffer1 = byteBufferPool.get().clear();
+
+        int oldLimit = buffer.limit();
+        buffer.limit(buffer.position() + len);
+        buffer1.put(buffer);
+        buffer.limit(oldLimit);
+
+        return buffer1.flip();
     }
 
     @Override

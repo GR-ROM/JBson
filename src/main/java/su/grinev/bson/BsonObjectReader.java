@@ -17,6 +17,7 @@ import java.util.function.Function;
 public class BsonObjectReader {
     private final Pool<ReaderContext> contextPool;
     private final Pool<byte[]> bufferPool;
+    private final Pool<ByteBuffer> binaryPacketPool;
     private final int documentSizeLimit;
     @Setter
     private boolean readBinaryAsByteArray = true;
@@ -26,7 +27,8 @@ public class BsonObjectReader {
             int initialPoolSize,
             int maxPoolSize,
             int documentSizeLimit,
-            int initialCStringSize
+            int initialCStringSize,
+            Pool<ByteBuffer> binaryPacketPool
     ) {
         this.documentSizeLimit = documentSizeLimit;
         contextPool = new Pool<>(
@@ -39,13 +41,14 @@ public class BsonObjectReader {
                 maxPoolSize,
                 () -> new byte[initialCStringSize]
         );
+        this.binaryPacketPool = binaryPacketPool;
     }
 
     public Document deserialize(ByteBuffer buffer) {
         buffer.order(ByteOrder.LITTLE_ENDIAN);
 
         Map<String, Object> rootDocument = new HashMap<>();
-        BsonReader bsonReader = new BsonByteBufferReader(buffer, bufferPool);
+        BsonReader bsonReader = new BsonByteBufferReader(buffer, bufferPool, binaryPacketPool);
         Deque<ReaderContext> stack = new ArrayDeque<>(64);
 
         int rootDocumentLength = bsonReader.readInt();
