@@ -96,12 +96,17 @@ public class BsonByteBufferReader implements BsonReader {
 
         ByteBuffer buffer1 = byteBufferPool.get().clear();
 
+        if (len > buffer.capacity()) {
+            throw new BsonException("Binary data is too big");
+        }
+
         int oldLimit = buffer.limit();
         buffer.limit(buffer.position() + len);
         buffer1.put(buffer);
         buffer.limit(oldLimit);
 
-        return buffer1.flip();
+        buffer1.flip();
+        return buffer1;
     }
 
     @Override
