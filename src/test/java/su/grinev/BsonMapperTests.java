@@ -41,7 +41,7 @@ public class BsonMapperTests {
         b.flip();
         VpnRequestDto<?> deserialized = bsonMapper.deserialize(b.getBuffer(), VpnRequestDto.class);
 
-        binaryPacketPool.release((ByteBuffer) deserialized.getData());
+        binaryPacketPool.release(((VpnForwardPacketDto) deserialized.getData()).getPacket());
         b.dispose();
         assertEquals(vpnRequestDto, deserialized);
     }

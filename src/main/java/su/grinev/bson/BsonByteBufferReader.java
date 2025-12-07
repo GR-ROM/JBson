@@ -1,8 +1,7 @@
 package su.grinev.bson;
 
+import lombok.extern.slf4j.Slf4j;
 import su.grinev.exception.BsonException;
-import su.grinev.pool.DisposablePool;
-import su.grinev.pool.DynamicByteBuffer;
 import su.grinev.pool.Pool;
 
 import java.math.BigDecimal;
@@ -12,6 +11,7 @@ import java.time.Instant;
 
 import static su.grinev.bson.Utility.decodeDecimal128;
 
+@Slf4j
 public class BsonByteBufferReader implements BsonReader {
     private final ByteBuffer buffer;
     private final Pool<byte[]> bufferPool;
@@ -94,10 +94,20 @@ public class BsonByteBufferReader implements BsonReader {
             len = innerLen;
         }
 
+        if (len < 0) {
+            throw new BsonException("Negative binary length: " + len);
+        }
+
+        if (len > buffer.remaining()) {
+            throw new BsonException("Binary data truncated: len=" + len +
+                    ", remaining=" + buffer.remaining());
+        }
+
         ByteBuffer buffer1 = byteBufferPool.get().clear();
 
-        if (len > buffer.capacity()) {
-            throw new BsonException("Binary data is too big");
+        if (len > buffer1.capacity()) {
+            buffer1 = ByteBuffer.allocateDirect(len);
+            log.warn("Reallocated direct buffer for binary data: {} bytes", len);
         }
 
         int oldLimit = buffer.limit();
@@ -108,6 +118,7 @@ public class BsonByteBufferReader implements BsonReader {
         buffer1.flip();
         return buffer1;
     }
+
 
     @Override
     public String readObjectId() {
