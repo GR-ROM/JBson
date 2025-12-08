@@ -13,7 +13,7 @@ public interface BsonReader extends Position {
     long readLong();
     boolean readBoolean();
     byte[] readBinaryAsArray();
-    ByteBuffer readBinary();
+    ByteBuffer readBinary(boolean readBinaryWithoutCopy);
     byte readByte();
     String readObjectId();
     Instant readDateTime();

@@ -82,7 +82,7 @@ public class BsonByteBufferReader implements BsonReader {
     }
 
     @Override
-    public ByteBuffer readBinary() {
+    public ByteBuffer readBinary(boolean bufferProjection) {
         int len = buffer.getInt();
         byte subtype = buffer.get();
 
@@ -103,19 +103,24 @@ public class BsonByteBufferReader implements BsonReader {
                     ", remaining=" + buffer.remaining());
         }
 
-        ByteBuffer buffer1 = byteBufferPool.get().clear();
+        ByteBuffer buffer1;
+        if (bufferProjection) {
+            buffer1 = buffer.slice(buffer.position(), len);
+            buffer.position(buffer.position() + len);
+        } else {
+             buffer1 = byteBufferPool.get().clear();
 
-        if (len > buffer1.capacity()) {
-            buffer1 = ByteBuffer.allocateDirect(len);
-            log.warn("Reallocated direct buffer for binary data: {} bytes", len);
+            if (len > buffer1.capacity()) {
+                buffer1 = ByteBuffer.allocateDirect(len);
+                log.warn("Reallocated direct buffer for binary data: {} bytes", len);
+            }
+
+            int oldLimit = buffer.limit();
+            buffer.limit(buffer.position() + len);
+            buffer1.put(buffer);
+            buffer.limit(oldLimit);
+            buffer1.flip();
         }
-
-        int oldLimit = buffer.limit();
-        buffer.limit(buffer.position() + len);
-        buffer1.put(buffer);
-        buffer.limit(oldLimit);
-
-        buffer1.flip();
         return buffer1;
     }
 

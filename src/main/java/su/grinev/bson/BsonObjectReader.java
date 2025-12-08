@@ -21,6 +21,8 @@ public class BsonObjectReader {
     private final int documentSizeLimit;
     @Setter
     private boolean readBinaryAsByteArray = true;
+    @Setter
+    private boolean enableBufferProjection = false;
     private Map<Integer, Function<ByteBuffer, Object>> customDeserializer = new HashMap<>();
 
     public BsonObjectReader(
@@ -159,7 +161,7 @@ public class BsonObjectReader {
                 if (readBinaryAsByteArray) {
                     yield objectReader.readBinaryAsArray();
                 } else {
-                    yield objectReader.readBinary();
+                    yield objectReader.readBinary(enableBufferProjection);
                 }
             }
             case 0x07 -> objectReader.readObjectId();
