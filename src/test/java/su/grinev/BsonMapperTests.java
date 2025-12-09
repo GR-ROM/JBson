@@ -58,7 +58,7 @@ public class BsonMapperTests {
         List<Long> serializationTime = new ArrayList<>();
         List<Long> deserializationTime = new ArrayList<>();
         Document deserialized = new Document(Map.of(), 0);
-        Object request1 = null;
+        Object request1;
 
         for (int i = 0; i < 10000; i++) {
             requestDto.getData().getPacket().clear();
