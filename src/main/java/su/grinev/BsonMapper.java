@@ -25,7 +25,7 @@ public class BsonMapper {
         this.initialPoolSize = initialPoolSize;
         this.maxPoolSize = maxPoolSize;
         this.bsonObjectWriter = new BsonObjectWriter(initialPoolSize, maxPoolSize, documentSize, true);
-        this.bsonObjectReader = new BsonObjectReader(initialPoolSize, maxPoolSize, documentSize, initialCStringSize, binaryPacketPool);
+        this.bsonObjectReader = new BsonObjectReader(initialPoolSize, maxPoolSize, maxPoolSize, documentSize, initialCStringSize, binaryPacketPool);
     }
 
     public DynamicByteBuffer serialize(Object o) {

@@ -30,7 +30,7 @@ public class BsonObjectReaderTests {
     @Test
     public void test() {
         Pool<ByteBuffer> binaryPacketPool = new Pool<>(10, 100, () -> ByteBuffer.allocate(1024));
-        BsonObjectReader deserializer = new BsonObjectReader(1000, 10000, 16 * 1024, 1000, binaryPacketPool);
+        BsonObjectReader deserializer = new BsonObjectReader(1000, 10000, 10000,16 * 1024, 1000, binaryPacketPool);
 
         ByteBuffer buffer = ByteBuffer.wrap(bsonBytes);
 

@@ -16,7 +16,7 @@ import java.util.function.Function;
 @Slf4j
 public class BsonObjectReader {
     private final Pool<ReaderContext> contextPool;
-    private final Pool<byte[]> bufferPool;
+    private final Pool<byte[]> stringPool;
     private final Pool<byte[]> packetPool;
     private final Pool<ByteBuffer> binaryPacketPool;
     private final int documentSizeLimit;
@@ -29,6 +29,7 @@ public class BsonObjectReader {
     public BsonObjectReader(
             int initialPoolSize,
             int maxPoolSize,
+            int maxPacketPoolSize,
             int documentSizeLimit,
             int initialCStringSize,
             Pool<ByteBuffer> binaryPacketPool
@@ -39,14 +40,14 @@ public class BsonObjectReader {
                 maxPoolSize,
                 ReaderContext::new
         );
-        bufferPool = new Pool<>(
+        stringPool = new Pool<>(
                 initialPoolSize,
                 maxPoolSize,
                 () -> new byte[initialCStringSize]
         );
         packetPool = new Pool<>(
                 initialPoolSize,
-                maxPoolSize,
+                maxPacketPoolSize,
                 () -> new byte[documentSizeLimit]
         );
         this.binaryPacketPool = binaryPacketPool;
@@ -56,7 +57,7 @@ public class BsonObjectReader {
         buffer.order(ByteOrder.LITTLE_ENDIAN);
 
         Map<String, Object> rootDocument = new HashMap<>();
-        BsonReader bsonReader = new BsonByteBufferReader(buffer, bufferPool, binaryPacketPool);
+        BsonReader bsonReader = new BsonByteBufferReader(buffer, stringPool, binaryPacketPool);
         Deque<ReaderContext> stack = new ArrayDeque<>(64);
 
         int rootDocumentLength = bsonReader.readInt();
@@ -116,19 +117,23 @@ public class BsonObjectReader {
 
         int totalLength = ByteBuffer.wrap(lengthBytes).order(ByteOrder.LITTLE_ENDIAN).getInt();
         byte[] documentBytes = packetPool.get();
-        System.arraycopy(lengthBytes, 0, documentBytes, 0, 4);
+        try {
+            System.arraycopy(lengthBytes, 0, documentBytes, 0, 4);
 
-        int offset = 4;
-        while (offset < totalLength) {
-            int read = inputStream.read(documentBytes, offset, totalLength - offset);
-            if (read == -1) {
-                throw new IOException("Unexpected end of stream");
+            int offset = 4;
+            while (offset < totalLength) {
+                int read = inputStream.read(documentBytes, offset, totalLength - offset);
+                if (read == -1) {
+                    throw new IOException("Unexpected end of stream");
+                }
+                offset += read;
             }
-            offset += read;
-        }
 
-        ByteBuffer buffer = ByteBuffer.wrap(documentBytes);
-        return deserialize(buffer);
+            ByteBuffer buffer = ByteBuffer.wrap(documentBytes);
+            return deserialize(buffer);
+        } finally {
+            packetPool.release(documentBytes);
+        }
     }
 
     private Object doReadValue(BsonReader objectReader, ReaderContext ctx, Deque<ReaderContext> stack, int type, AtomicBoolean needBreak) {
