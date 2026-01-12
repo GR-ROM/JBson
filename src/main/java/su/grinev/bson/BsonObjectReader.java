@@ -17,6 +17,7 @@ import java.util.function.Function;
 public class BsonObjectReader {
     private final Pool<ReaderContext> contextPool;
     private final Pool<byte[]> bufferPool;
+    private final Pool<byte[]> packetPool;
     private final Pool<ByteBuffer> binaryPacketPool;
     private final int documentSizeLimit;
     @Setter
@@ -42,6 +43,11 @@ public class BsonObjectReader {
                 initialPoolSize,
                 maxPoolSize,
                 () -> new byte[initialCStringSize]
+        );
+        packetPool = new Pool<>(
+                initialPoolSize,
+                maxPoolSize,
+                () -> new byte[documentSizeLimit]
         );
         this.binaryPacketPool = binaryPacketPool;
     }
@@ -109,7 +115,7 @@ public class BsonObjectReader {
         }
 
         int totalLength = ByteBuffer.wrap(lengthBytes).order(ByteOrder.LITTLE_ENDIAN).getInt();
-        byte[] documentBytes = new byte[totalLength];
+        byte[] documentBytes = packetPool.get();
         System.arraycopy(lengthBytes, 0, documentBytes, 0, 4);
 
         int offset = 4;
