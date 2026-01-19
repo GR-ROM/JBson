@@ -3,7 +3,7 @@ package su.grinev;
 import org.junit.jupiter.api.Test;
 import su.grinev.bson.BsonObjectReader;
 import su.grinev.bson.Document;
-import su.grinev.pool.Pool;
+import su.grinev.pool.PoolFactory;
 
 import java.nio.ByteBuffer;
 
@@ -29,9 +29,14 @@ public class BsonObjectReaderTests {
 
     @Test
     public void test() {
-        Pool<ByteBuffer> binaryPacketPool = new Pool<>(10, 100, () -> ByteBuffer.allocate(1024));
-        BsonObjectReader deserializer = new BsonObjectReader(1000, 10000, 10000,16 * 1024, 1000, binaryPacketPool);
+        PoolFactory poolFactory = PoolFactory.Builder.builder()
+                .setMinPoolSize(100)
+                .setMaxPoolSize(1000)
+                .setOutOfPoolTimeout(1000)
+                .setBlocking(true)
+                .build();
 
+        BsonObjectReader deserializer = new BsonObjectReader(poolFactory, 16 * 1024, 1000, () -> ByteBuffer.allocateDirect(1024));
         ByteBuffer buffer = ByteBuffer.wrap(bsonBytes);
 
         Document document = deserializer.deserialize(buffer);

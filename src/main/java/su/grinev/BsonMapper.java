@@ -6,26 +6,26 @@ import su.grinev.bson.BsonObjectWriter;
 import su.grinev.bson.Document;
 import su.grinev.pool.DynamicByteBuffer;
 import su.grinev.pool.Pool;
+import su.grinev.pool.PoolFactory;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
+import java.util.function.Supplier;
 
 @Getter
 public class BsonMapper {
-    public final int initialPoolSize;
-    public final int maxPoolSize;
+    public final PoolFactory poolFactory;
     private final Binder writerBinder = new Binder();
     private final Binder readerBinder = new Binder();
     private final BsonObjectWriter bsonObjectWriter;
     private final BsonObjectReader bsonObjectReader;
 
-    public BsonMapper(int initialPoolSize, int maxPoolSize, int documentSize, int initialCStringSize, Pool<ByteBuffer> binaryPacketPool) {
-        this.initialPoolSize = initialPoolSize;
-        this.maxPoolSize = maxPoolSize;
-        this.bsonObjectWriter = new BsonObjectWriter(initialPoolSize, maxPoolSize, documentSize, true);
-        this.bsonObjectReader = new BsonObjectReader(initialPoolSize, maxPoolSize, maxPoolSize, documentSize, initialCStringSize, binaryPacketPool);
+    public BsonMapper(PoolFactory poolFactory, int documentSize, int initialCStringSize, Supplier<ByteBuffer> byteBufferAllocator) {
+        this.poolFactory = poolFactory;
+        this.bsonObjectWriter = new BsonObjectWriter(poolFactory, documentSize, true);
+        this.bsonObjectReader = new BsonObjectReader(poolFactory, documentSize, initialCStringSize, byteBufferAllocator);
     }
 
     public DynamicByteBuffer serialize(Object o) {

@@ -5,6 +5,7 @@ import su.grinev.bson.BsonObjectReader;
 import su.grinev.bson.BsonObjectWriter;
 import su.grinev.bson.Document;
 import su.grinev.pool.DynamicByteBuffer;
+import su.grinev.pool.PoolFactory;
 import su.grinev.test.VpnForwardPacketDto;
 import su.grinev.test.VpnRequestDto;
 
@@ -21,7 +22,14 @@ public class BsonMapperTests {
 
     @Test
     public void serializeAndDeserializeObjectTest() {
-        BsonMapper bsonMapper = new BsonMapper(10, 100, 2048, 512, null);
+        PoolFactory poolFactory = PoolFactory.Builder.builder()
+                .setMinPoolSize(100)
+                .setMaxPoolSize(1000)
+                .setOutOfPoolTimeout(1000)
+                .setBlocking(true)
+                .build();
+
+        BsonMapper bsonMapper = new BsonMapper(poolFactory, 4096, 64, () -> ByteBuffer.allocateDirect(4096));
         bsonMapper.getBsonObjectReader().setReadBinaryAsByteArray(false);
         bsonMapper.getBsonObjectReader().setEnableBufferProjection(true);
         VpnRequestDto<VpnForwardPacketDto> vpnRequestDto = VpnRequestDto.wrap(FOO, VpnForwardPacketDto.builder()
@@ -45,9 +53,15 @@ public class BsonMapperTests {
     @Test
     public void performanceTest() {
         Binder binder = new Binder();
+        PoolFactory poolFactory = PoolFactory.Builder.builder()
+                .setMinPoolSize(10)
+                .setMaxPoolSize(1000)
+                .setBlocking(true)
+                .setOutOfPoolTimeout(1000)
+                .build();
 
-        BsonObjectWriter bsonObjectWriter = new BsonObjectWriter(10, 100, 129 * 1024, true);
-        BsonObjectReader bsonObjectReader = new BsonObjectReader( 10, 1000, 1000, 129  * 1024, 128, null);
+        BsonObjectWriter bsonObjectWriter = new BsonObjectWriter(poolFactory, 129 * 1024, true);
+        BsonObjectReader bsonObjectReader = new BsonObjectReader(poolFactory, 129  * 1024, 128, () -> ByteBuffer.allocateDirect(4096));
         bsonObjectReader.setReadBinaryAsByteArray(false);
         bsonObjectReader.setEnableBufferProjection(true);
 

@@ -1,12 +1,13 @@
 package su.grinev.pool;
 
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 
 public class DisposablePool<T extends Disposable> extends BasePool<T> {
     private final Supplier<T> supplier;
 
-    public DisposablePool(int initialSize, int limit, Supplier<T> supplier) {
-        super(initialSize, limit);
+    public DisposablePool(String name, AtomicInteger counter, int initialSize, int limit, int timeoutMs, boolean blocking, Supplier<T> supplier) {
+        super(name, counter, initialSize, limit, timeoutMs, blocking);
         this.supplier = supplier;
         for (int i = 0; i < initialSize; i++) {
             pool.add(supply());

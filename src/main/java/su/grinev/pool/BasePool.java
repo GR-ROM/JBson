@@ -1,21 +1,31 @@
 package su.grinev.pool;
 
+import lombok.Getter;
+
 import java.util.concurrent.ConcurrentLinkedDeque;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public abstract class BasePool<T> {
-
-    protected final AtomicInteger counter = new AtomicInteger(0);
+    @Getter
+    protected final AtomicInteger counter;
     protected final ConcurrentLinkedDeque<T> pool;
     protected int limit;
     protected int initalSize;
-    protected volatile boolean isWaiting;
+    protected final AtomicBoolean isWaiting;
+    protected final int timeoutMs;
+    protected final boolean blocking;
+    public final String name;
 
-    public BasePool(int initialSize, int limit) {
+    public BasePool(String name, AtomicInteger counter, int initialSize, int limit, int timeoutMs, boolean blocking) {
+        this.name = name;
         this.pool = new ConcurrentLinkedDeque<>();
+        this.counter = counter;
         this.limit = limit;
         this.initalSize = initialSize;
-        this.isWaiting = false;
+        this.isWaiting = new AtomicBoolean(false);
+        this.timeoutMs = timeoutMs;
+        this.blocking = blocking;
     }
 
     protected abstract T supply();
@@ -23,18 +33,28 @@ public abstract class BasePool<T> {
     public T get() {
         synchronized (pool) {
             if (counter.get() >= limit) {
-                while (counter.get() >= limit) {
-                    try {
-                        isWaiting = true;
-                        pool.wait();
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                        throw new RuntimeException(e);
+                if (blocking) {
+                    while (counter.get() >= limit) {
+                        try {
+                            isWaiting.set(true);
+                            if (timeoutMs > 0) {
+                                pool.wait(timeoutMs);
+                                if (counter.get() >= limit) {
+                                    throw new RuntimeException("Pool is full");
+                                }
+                            } else {
+                                pool.wait();
+                            }
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            throw new RuntimeException(e);
+                        }
                     }
+                } else {
+                    throw new RuntimeException("Pool is full");
                 }
-            } else {
-                counter.incrementAndGet();
             }
+            counter.incrementAndGet();
             if (pool.isEmpty()) {
                 pool.add(supply());
             }
@@ -43,10 +63,10 @@ public abstract class BasePool<T> {
     }
 
     public void release(T t) {
-        pool.addLast(t);
-        if (counter.decrementAndGet() < limit && isWaiting) {
-            synchronized (pool) {
-                isWaiting = false;
+        synchronized (pool) {
+            pool.addLast(t);
+            counter.decrementAndGet();
+            if (isWaiting.compareAndSet(true, false)) {
                 pool.notifyAll();
             }
         }

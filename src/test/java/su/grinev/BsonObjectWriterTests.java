@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import su.grinev.bson.BsonObjectWriter;
 import su.grinev.bson.Document;
 import su.grinev.pool.DynamicByteBuffer;
+import su.grinev.pool.PoolFactory;
 
 import java.nio.ByteBuffer;
 import java.util.*;
@@ -17,7 +18,13 @@ public class BsonObjectWriterTests {
 
     @BeforeEach
     void setUp() {
-        writer = new BsonObjectWriter(1000, 10000, 8 * 1024, true);
+        PoolFactory poolFactory = PoolFactory.Builder.builder()
+                .setMinPoolSize(100)
+                .setMaxPoolSize(1000)
+                .setOutOfPoolTimeout(1000)
+                .setBlocking(true)
+                .build();
+        writer = new BsonObjectWriter(poolFactory, 8 * 1024, true);
     }
 
     private byte[] toByteArray(ByteBuffer buffer) {

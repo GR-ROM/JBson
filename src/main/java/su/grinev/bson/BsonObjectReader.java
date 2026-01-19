@@ -4,6 +4,7 @@ import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import su.grinev.exception.BsonException;
 import su.grinev.pool.Pool;
+import su.grinev.pool.PoolFactory;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -12,6 +13,7 @@ import java.nio.ByteOrder;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 @Slf4j
 public class BsonObjectReader {
@@ -27,30 +29,16 @@ public class BsonObjectReader {
     private Map<Integer, Function<ByteBuffer, Object>> customDeserializer = new HashMap<>();
 
     public BsonObjectReader(
-            int initialPoolSize,
-            int maxPoolSize,
-            int maxPacketPoolSize,
+            PoolFactory poolFactory,
             int documentSizeLimit,
             int initialCStringSize,
-            Pool<ByteBuffer> binaryPacketPool
+            Supplier<ByteBuffer> byteBufferAllocator
     ) {
         this.documentSizeLimit = documentSizeLimit;
-        contextPool = new Pool<>(
-                initialPoolSize,
-                maxPoolSize,
-                ReaderContext::new
-        );
-        stringPool = new Pool<>(
-                initialPoolSize,
-                maxPoolSize,
-                () -> new byte[initialCStringSize]
-        );
-        packetPool = new Pool<>(
-                initialPoolSize,
-                maxPacketPoolSize,
-                () -> new byte[documentSizeLimit]
-        );
-        this.binaryPacketPool = binaryPacketPool;
+        contextPool = poolFactory.getPool("bson-reader-context-pool", ReaderContext::new);
+        stringPool = poolFactory.getPool("bson-reader-string-pool", () -> new byte[initialCStringSize]);
+        packetPool = poolFactory.getPool("bson-reader-input-steam-pool", () -> new byte[documentSizeLimit]);
+        binaryPacketPool = poolFactory.getPool("bson-reader-packet-pool", byteBufferAllocator);
     }
 
     public Document deserialize(ByteBuffer buffer) {

@@ -3,6 +3,7 @@ package su.grinev.bson;
 import su.grinev.pool.DisposablePool;
 import su.grinev.pool.DynamicByteBuffer;
 import su.grinev.pool.Pool;
+import su.grinev.pool.PoolFactory;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -26,14 +27,13 @@ public class BsonObjectWriter {
     private final Pool<byte[]> bufferPool;
 
     public BsonObjectWriter(
-            int initialPoolSize,
-            int maxPoolSize,
+            PoolFactory poolFactory,
             int documentSize,
             boolean directBuffers
     ) {
-        writerContextPool = new Pool<>(initialPoolSize, maxPoolSize, WriterContext::new);
-        dynamicByteBufferPool = new DisposablePool<>(initialPoolSize, maxPoolSize, () -> new DynamicByteBuffer(documentSize, directBuffers));
-        bufferPool = new Pool<>(initialPoolSize, maxPoolSize, () -> new byte[documentSize]);
+        writerContextPool = poolFactory.getPool("writer-context-pool", WriterContext::new);
+        dynamicByteBufferPool = poolFactory.getDisposablePool("write-buffer-pool", () -> new DynamicByteBuffer(documentSize, directBuffers));
+        bufferPool = poolFactory.getPool("writer-nested-buffer-pool", () -> new byte[documentSize]);
     }
 
     public DynamicByteBuffer serialize(Document document) {
