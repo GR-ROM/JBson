@@ -26,7 +26,7 @@ public class BsonObjectReader {
     private boolean readBinaryAsByteArray = true;
     @Setter
     private boolean enableBufferProjection = false;
-    private Map<Integer, Function<ByteBuffer, Object>> customDeserializer = new HashMap<>();
+    private final Map<Integer, Function<ByteBuffer, Object>> customDeserializer = new HashMap<>();
 
     public BsonObjectReader(
             PoolFactory poolFactory,

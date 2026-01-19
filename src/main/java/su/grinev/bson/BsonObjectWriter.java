@@ -31,9 +31,9 @@ public class BsonObjectWriter {
             int documentSize,
             boolean directBuffers
     ) {
-        writerContextPool = poolFactory.getPool("writer-context-pool", WriterContext::new);
-        dynamicByteBufferPool = poolFactory.getDisposablePool("write-buffer-pool", () -> new DynamicByteBuffer(documentSize, directBuffers));
-        bufferPool = poolFactory.getPool("writer-nested-buffer-pool", () -> new byte[documentSize]);
+        writerContextPool = poolFactory.getPool("bson-writer-context-pool", WriterContext::new);
+        dynamicByteBufferPool = poolFactory.getDisposablePool("bson-write-buffer-pool", () -> new DynamicByteBuffer(documentSize, directBuffers));
+        bufferPool = poolFactory.getPool("bson-writer-nested-buffer-pool", () -> new byte[documentSize]);
     }
 
     public DynamicByteBuffer serialize(Document document) {
