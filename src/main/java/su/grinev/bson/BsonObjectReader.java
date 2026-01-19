@@ -20,25 +20,28 @@ public class BsonObjectReader {
     private final Pool<ReaderContext> contextPool;
     private final Pool<byte[]> stringPool;
     private final Pool<byte[]> packetPool;
-    private final Pool<ByteBuffer> binaryPacketPool;
+    private Pool<ByteBuffer> binaryPacketPool;
     private final int documentSizeLimit;
     @Setter
     private boolean readBinaryAsByteArray = true;
-    @Setter
-    private boolean enableBufferProjection = false;
+    private final boolean enableBufferProjection;
     private final Map<Integer, Function<ByteBuffer, Object>> customDeserializer = new HashMap<>();
 
     public BsonObjectReader(
             PoolFactory poolFactory,
             int documentSizeLimit,
             int initialCStringSize,
+            boolean enableBufferProjection,
             Supplier<ByteBuffer> byteBufferAllocator
     ) {
         this.documentSizeLimit = documentSizeLimit;
+        this.enableBufferProjection = enableBufferProjection;
         contextPool = poolFactory.getPool("bson-reader-context-pool", ReaderContext::new);
         stringPool = poolFactory.getPool("bson-reader-string-pool", () -> new byte[initialCStringSize]);
         packetPool = poolFactory.getPool("bson-reader-input-steam-pool", () -> new byte[documentSizeLimit]);
-        binaryPacketPool = poolFactory.getPool("bson-reader-packet-pool", byteBufferAllocator);
+        if (!enableBufferProjection) {
+            binaryPacketPool = poolFactory.getPool("bson-reader-packet-pool", byteBufferAllocator);
+        }
     }
 
     public Document deserialize(ByteBuffer buffer) {

@@ -25,7 +25,7 @@ public class BsonMapper {
     public BsonMapper(PoolFactory poolFactory, int documentSize, int initialCStringSize, Supplier<ByteBuffer> byteBufferAllocator) {
         this.poolFactory = poolFactory;
         this.bsonObjectWriter = new BsonObjectWriter(poolFactory, documentSize, true);
-        this.bsonObjectReader = new BsonObjectReader(poolFactory, documentSize, initialCStringSize, byteBufferAllocator);
+        this.bsonObjectReader = new BsonObjectReader(poolFactory, documentSize, initialCStringSize, true, byteBufferAllocator);
     }
 
     public DynamicByteBuffer serialize(Object o) {

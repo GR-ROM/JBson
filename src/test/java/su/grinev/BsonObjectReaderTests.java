@@ -36,7 +36,7 @@ public class BsonObjectReaderTests {
                 .setBlocking(true)
                 .build();
 
-        BsonObjectReader deserializer = new BsonObjectReader(poolFactory, 16 * 1024, 1000, () -> ByteBuffer.allocateDirect(1024));
+        BsonObjectReader deserializer = new BsonObjectReader(poolFactory, 16 * 1024, 1000, true, null);
         ByteBuffer buffer = ByteBuffer.wrap(bsonBytes);
 
         Document document = deserializer.deserialize(buffer);

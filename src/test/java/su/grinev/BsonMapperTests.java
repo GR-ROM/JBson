@@ -31,7 +31,6 @@ public class BsonMapperTests {
 
         BsonMapper bsonMapper = new BsonMapper(poolFactory, 4096, 64, () -> ByteBuffer.allocateDirect(4096));
         bsonMapper.getBsonObjectReader().setReadBinaryAsByteArray(false);
-        bsonMapper.getBsonObjectReader().setEnableBufferProjection(true);
         VpnRequestDto<VpnForwardPacketDto> vpnRequestDto = VpnRequestDto.wrap(FOO, VpnForwardPacketDto.builder()
                 .packet(ByteBuffer.allocateDirect(1024))
                 .build());
@@ -61,9 +60,8 @@ public class BsonMapperTests {
                 .build();
 
         BsonObjectWriter bsonObjectWriter = new BsonObjectWriter(poolFactory, 129 * 1024, true);
-        BsonObjectReader bsonObjectReader = new BsonObjectReader(poolFactory, 129  * 1024, 128, () -> ByteBuffer.allocateDirect(4096));
+        BsonObjectReader bsonObjectReader = new BsonObjectReader(poolFactory, 129  * 1024, 128, true, () -> ByteBuffer.allocateDirect(4096));
         bsonObjectReader.setReadBinaryAsByteArray(false);
-        bsonObjectReader.setEnableBufferProjection(true);
 
         VpnRequestDto<VpnForwardPacketDto> requestDto = VpnRequestDto.wrap(FOO, VpnForwardPacketDto.builder()
                 .packet(ByteBuffer.allocateDirect(128 * 1024))
