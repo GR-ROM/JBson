@@ -1,14 +1,12 @@
 package su.grinev.pool;
 
-import lombok.Getter;
-
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public abstract class BasePool<T> {
-    @Getter
-    protected final AtomicInteger counter;
+    protected final AtomicInteger counter = new AtomicInteger(0);
+    protected final AtomicInteger currentPoolSize;
     protected final ConcurrentLinkedDeque<T> pool;
     protected int limit;
     protected int initalSize;
@@ -17,10 +15,10 @@ public abstract class BasePool<T> {
     protected final boolean blocking;
     public final String name;
 
-    public BasePool(String name, AtomicInteger counter, int initialSize, int limit, int timeoutMs, boolean blocking) {
+    public BasePool(String name, AtomicInteger currentPoolSize, int initialSize, int limit, int timeoutMs, boolean blocking) {
         this.name = name;
         this.pool = new ConcurrentLinkedDeque<>();
-        this.counter = counter;
+        this.currentPoolSize = currentPoolSize;
         this.limit = limit;
         this.initalSize = initialSize;
         this.isWaiting = new AtomicBoolean(false);

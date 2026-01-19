@@ -17,6 +17,7 @@ public class Pool<T> extends BasePool<T> {
 
     @Override
     protected T supply() {
+        super.currentPoolSize.incrementAndGet();
         return supplier.get();
     }
 }

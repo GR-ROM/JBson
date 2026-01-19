@@ -15,6 +15,7 @@ public class DisposablePool<T extends Disposable> extends BasePool<T> {
     }
 
     protected T supply() {
+        super.currentPoolSize.incrementAndGet();
         T t = supplier.get();
         t.setOnDispose(() -> release(t));
         return t;
