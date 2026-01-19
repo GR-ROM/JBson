@@ -1,5 +1,8 @@
 package su.grinev.pool;
 
+import lombok.Getter;
+
+import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -23,6 +26,10 @@ public class PoolFactory {
 
     public PoolFactory() {
 
+    }
+
+    public Map<String, BasePool> getPools() {
+        return new HashMap<>(pools);
     }
 
     public <T> Pool<T> getPool(Supplier<T> supplier) {
