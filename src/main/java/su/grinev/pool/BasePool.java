@@ -1,11 +1,14 @@
 package su.grinev.pool;
 
+import lombok.Getter;
+
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public abstract class BasePool<T> {
     protected final AtomicInteger counter = new AtomicInteger(0);
+    @Getter
     protected final AtomicInteger currentPoolSize;
     protected final ConcurrentLinkedDeque<T> pool;
     protected int limit;
