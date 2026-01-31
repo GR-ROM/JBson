@@ -11,7 +11,6 @@ import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.*;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
@@ -20,6 +19,7 @@ public class BsonObjectReader {
     private final Pool<ReaderContext> contextPool;
     private final Pool<byte[]> stringPool;
     private final Pool<byte[]> packetPool;
+    private final Pool<ArrayDeque<ReaderContext>> stackPool;
     private Pool<ByteBuffer> binaryPacketPool;
     private final int documentSizeLimit;
     @Setter
@@ -39,6 +39,7 @@ public class BsonObjectReader {
         contextPool = poolFactory.getPool("bson-reader-context-pool", ReaderContext::new);
         stringPool = poolFactory.getPool("bson-reader-string-pool", () -> new byte[initialCStringSize]);
         packetPool = poolFactory.getPool("bson-reader-input-steam-pool", () -> new byte[documentSizeLimit]);
+        stackPool = poolFactory.getPool("bson-reader-stack-pool", () -> new ArrayDeque<>(64));
         if (!enableBufferProjection) {
             binaryPacketPool = poolFactory.getPool("bson-reader-packet-pool", byteBufferAllocator);
         }
@@ -49,55 +50,67 @@ public class BsonObjectReader {
 
         Map<String, Object> rootDocument = new HashMap<>();
         BsonReader bsonReader = new BsonByteBufferReader(buffer, stringPool, binaryPacketPool);
-        Deque<ReaderContext> stack = new ArrayDeque<>(64);
+        ArrayDeque<ReaderContext> stack = stackPool.get();
 
-        int rootDocumentLength = bsonReader.readInt();
-        if (rootDocumentLength > documentSizeLimit) {
-            throw new BsonException("Document is too big");
-        }
+        try {
+            int rootDocumentLength = bsonReader.readInt();
+            if (rootDocumentLength > documentSizeLimit) {
+                throw new BsonException("Document is too big");
+            }
 
-        ReaderContext ctx = contextPool.get()
-                .setLength(rootDocumentLength)
-                .setValue(rootDocument);
-        stack.addFirst(ctx);
+            ReaderContext ctx = contextPool.get()
+                    .setLength(rootDocumentLength)
+                    .setValue(rootDocument);
+            stack.addFirst(ctx);
 
-        AtomicBoolean needBreak = new AtomicBoolean(false);
+            while (!stack.isEmpty()) {
+                ctx = stack.getFirst();
+                int stackSizeBefore = stack.size();
 
-        while (!stack.isEmpty()) {
-            needBreak.set(false);
-            ctx = stack.getFirst();
+                if (ctx.getValue() instanceof Map map) {
+                    while (true) {
+                        int type = bsonReader.readByte();
+                        if (type == 0) {
+                            break;
+                        }
+                        String key = bsonReader.readCString();
+                        Object value = doReadValue(bsonReader, ctx, stack, type);
+                        map.put(key, value);
 
-            if (ctx.getValue() instanceof Map map) {
-                while (!needBreak.get()) {
-                    int type = bsonReader.readByte();
-                    if (type == 0) {
-                        break;
+                        // Check if a nested context was pushed
+                        if (stack.size() > stackSizeBefore) {
+                            break;
+                        }
                     }
-                    String key = bsonReader.readCString();
-                    Object value = doReadValue(bsonReader, ctx, stack, type, needBreak);
+                } else if (ctx.getValue() instanceof List list) {
+                    int index = 0;
+                    while (true) {
+                        int type = bsonReader.readByte();
+                        if (type == 0) {
+                            break;
+                        }
+                        bsonReader.readCString(); // Skip array index key
+                        Object value = doReadValue(bsonReader, ctx, stack, type);
+                        list.add(index++, value);
 
-                    map.put(key, value);
+                        // Check if a nested context was pushed
+                        if (stack.size() > stackSizeBefore) {
+                            break;
+                        }
+                    }
                 }
-            } else if (ctx.getValue() instanceof List list) {
-               while (!needBreak.get()) {
-                   int type = bsonReader.readByte();
-                   if (type == 0) {
-                       break;
-                   }
-                   String key = bsonReader.readCString();
-                   Object value = doReadValue(bsonReader, ctx, stack, type, needBreak);
 
-                   list.add(Integer.parseInt(key), value);
-               }
+                if (ctx == stack.getFirst()) {
+                    stack.removeFirst();
+                    contextPool.release(ctx);
+                }
             }
 
-            if (ctx == stack.getFirst()) {
-                stack.removeFirst();
-                contextPool.release(ctx);
-            }
+            return new Document(rootDocument);
+        } finally {
+            stack.clear();
+            stackPool.release(stack);
         }
-
-        return new Document(rootDocument);
     }
 
     public Document deserialize(InputStream inputStream) throws IOException {
@@ -127,36 +140,34 @@ public class BsonObjectReader {
         }
     }
 
-    private Object doReadValue(BsonReader objectReader, ReaderContext ctx, Deque<ReaderContext> stack, int type, AtomicBoolean needBreak) {
+    private Object doReadValue(BsonReader objectReader, ReaderContext ctx, Deque<ReaderContext> stack, int type) {
         return switch (type) {
             case 0x01 -> objectReader.readDouble();
             case 0x02 -> objectReader.readString(); // UTF-8 String
             case 0x03 -> { // Embedded document
-                int len =  objectReader.readInt();
+                int len = objectReader.readInt();
                 if (len > ctx.getLength()) {
                     throw new BsonException("Nested document cannot have more than " + ctx.getLength() + " bytes");
                 }
 
-                Object value = new HashMap<>();
+                Object value = new HashMap<>(8);
                 ReaderContext readerContext = contextPool.get()
                         .setLength(len)
                         .setValue(value);
                 stack.addFirst(readerContext);
-                needBreak.set(true);
                 yield value;
             }
             case 0x04 -> { // Array
-                int len =  objectReader.readInt();
+                int len = objectReader.readInt();
                 if (len > ctx.getLength()) {
                     throw new BsonException("Nested document cannot have more than " + ctx.getLength() + " bytes");
                 }
 
-                Object value = new ArrayList<>();
+                Object value = new ArrayList<>(8);
                 ReaderContext readerContext = contextPool.get()
                         .setLength(len)
                         .setValue(value);
                 stack.addFirst(readerContext);
-                needBreak.set(true);
                 yield value;
             }
             case 0x05 -> {

@@ -99,8 +99,7 @@ public class BsonByteBufferReader implements BsonReader {
         }
 
         if (len > buffer.remaining()) {
-            throw new BsonException("Binary data truncated: len=" + len +
-                    ", remaining=" + buffer.remaining());
+            throw new BsonException("Binary data truncated: len=" + len + ", remaining=" + buffer.remaining());
         }
 
         ByteBuffer buffer1;
@@ -108,7 +107,7 @@ public class BsonByteBufferReader implements BsonReader {
             buffer1 = buffer.slice(buffer.position(), len);
             buffer.position(buffer.position() + len);
         } else {
-             buffer1 = byteBufferPool.get().clear();
+            buffer1 = byteBufferPool.get().clear();
 
             if (len > buffer1.capacity()) {
                 buffer1 = ByteBuffer.allocateDirect(len);
@@ -123,7 +122,6 @@ public class BsonByteBufferReader implements BsonReader {
         }
         return buffer1;
     }
-
 
     @Override
     public String readObjectId() {
