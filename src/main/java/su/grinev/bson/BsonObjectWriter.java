@@ -98,9 +98,10 @@ public class BsonObjectWriter {
                 }
             }
 
-            if (!ctx.hasNext()) {
+            if (!ctx.hasNext() && stack.size() == stackSize) {
                 writeTerminator(buffer);
-                buffer.putInt(ctx.lengthPos, buffer.position() - ctx.startPos);
+                int length = buffer.position() - ctx.startPos;
+                buffer.putInt(ctx.lengthPos, length);
                 stack.removeFirst();
                 ctx.startPos = -1; // Reset for reuse
                 writerContextPool.release(ctx);

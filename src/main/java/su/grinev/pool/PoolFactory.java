@@ -43,6 +43,14 @@ public class PoolFactory {
         return pool;
     }
 
+    public <T> FastPool<T> getFastPool(Supplier<T> supplier) {
+        return new FastPool<>(supplier, minPoolSize, maxPoolSize);
+    }
+
+    public <T> FastPool<T> getFastPool(String name, Supplier<T> supplier) {
+        return new FastPool<>(supplier, minPoolSize, maxPoolSize);
+    }
+
     public <T extends Disposable> DisposablePool<T> getDisposablePool(Supplier<T> supplier) {
         String name = "DisposablePool-" + poolCounter.getAndIncrement();
         return getDisposablePool(name, supplier);

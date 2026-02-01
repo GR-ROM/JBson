@@ -12,6 +12,11 @@ public class Tokenizer {
     private static final char[] TRUE = "true".toCharArray();
     private static final char[] FALSE = "false".toCharArray();
     private static final char[] NULL = "null".toCharArray();
+    private static final int NUMBER_BUFFER_SIZE = 32;
+
+    // Thread-local buffer for number parsing - avoids StringBuilder allocation
+    private static final ThreadLocal<char[]> numberBuffer = ThreadLocal.withInitial(() -> new char[NUMBER_BUFFER_SIZE]);
+
     private final Buffer buffer;
     private final StringParser stringParser;
 
@@ -67,59 +72,62 @@ public class Tokenizer {
     }
 
     private NumberToken parseNumber() {
-        StringBuilder sb = new StringBuilder();
-        if (buffer.peek() == '-') sb.append(buffer.next());
+        char[] buf = numberBuffer.get();
+        int len = 0;
+        boolean isFloatingPoint = false;
 
-        sb.append(parseIntPart());
-
-        if (buffer.hasNext() && buffer.peek() == '.') {
-            sb.append(buffer.next());
-            sb.append(parseFractionPart());
+        if (buffer.peek() == '-') {
+            buf[len++] = buffer.next();
         }
 
-        if (buffer.hasNext() && (buffer.peek() == 'e' || buffer.peek() == 'E')) {
-            sb.append(buffer.next());
-            sb.append(parseExponentPart());
-        }
-
-        return new NumberToken(Float.parseFloat(sb.toString()));
-    }
-
-    private String parseIntPart() {
-        StringBuilder sb = new StringBuilder();
+        // Parse integer part
         if (buffer.peek() == '0') {
-            sb.append(buffer.next());
+            buf[len++] = buffer.next();
         } else {
             while (buffer.hasNext() && Character.isDigit(buffer.peek())) {
-                sb.append(buffer.next());
+                buf[len++] = buffer.next();
             }
         }
-        return sb.toString();
-    }
 
-    private String parseFractionPart() {
-        StringBuilder sb = new StringBuilder();
-        while (buffer.hasNext() && Character.isDigit(buffer.peek())) {
-            sb.append(buffer.next());
+        // Parse fraction part
+        if (buffer.hasNext() && buffer.peek() == '.') {
+            isFloatingPoint = true;
+            buf[len++] = buffer.next();
+            int fractionStart = len;
+            while (buffer.hasNext() && Character.isDigit(buffer.peek())) {
+                buf[len++] = buffer.next();
+            }
+            if (len == fractionStart) {
+                throw new IllegalArgumentException("Invalid fraction at pos: " + buffer.getPos());
+            }
         }
 
-        if (sb.isEmpty()) {
-            throw new IllegalArgumentException("Invalid fraction at pos: " + buffer.getPos());
+        // Parse exponent part
+        if (buffer.hasNext() && (buffer.peek() == 'e' || buffer.peek() == 'E')) {
+            isFloatingPoint = true;
+            buf[len++] = buffer.next();
+            int expStart = len;
+            if (buffer.hasNext() && (buffer.peek() == '+' || buffer.peek() == '-')) {
+                buf[len++] = buffer.next();
+                expStart++;
+            }
+            while (buffer.hasNext() && Character.isDigit(buffer.peek())) {
+                buf[len++] = buffer.next();
+            }
+            if (len == expStart) {
+                throw new IllegalArgumentException("Invalid exponent at pos: " + buffer.getPos());
+            }
         }
-        return sb.toString();
-    }
 
-    private String parseExponentPart() {
-        StringBuilder sb = new StringBuilder();
-        if (buffer.hasNext() && (buffer.peek() == '+' || buffer.peek() == '-')) {
-            sb.append(buffer.next());
+        String numStr = new String(buf, 0, len);
+        if (isFloatingPoint) {
+            return new NumberToken(Double.parseDouble(numStr));
+        } else {
+            long longVal = Long.parseLong(numStr);
+            if (longVal >= Integer.MIN_VALUE && longVal <= Integer.MAX_VALUE) {
+                return new NumberToken((int) longVal);
+            }
+            return new NumberToken(longVal);
         }
-        while (buffer.hasNext() && Character.isDigit(buffer.peek())) {
-            sb.append(buffer.next());
-        }
-        if (sb.isEmpty()) {
-            throw new IllegalArgumentException("Invalid exponent at pos: " + buffer.getPos());
-        }
-        return sb.toString();
     }
 }

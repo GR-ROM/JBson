@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cargo build:*)",
+      "Bash(cargo test:*)",
+      "Bash(./gradlew jmh:*)",
+      "Bash(cargo bench:*)",
+      "Bash(./gradlew test:*)"
+    ]
+  }
+}

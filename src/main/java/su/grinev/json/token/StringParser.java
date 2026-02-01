@@ -2,19 +2,24 @@ package su.grinev.json.token;
 
 public class StringParser {
 
+    // Thread-local StringBuilder for escape sequence handling
+    private static final ThreadLocal<StringBuilder> escapeBuilder = ThreadLocal.withInitial(() -> new StringBuilder(256));
+    private static final ThreadLocal<char[]> unicodeBuffer = ThreadLocal.withInitial(() -> new char[4]);
+
     private final Buffer buffer;
-    private final StringPool stringPool = new StringPool();
 
     public StringParser(Buffer buffer) {
         this.buffer = buffer;
     }
 
     public StringToken parseString() {
-        buffer.next();
-        StringBuilder sb = new StringBuilder();
+        buffer.next(); // consume opening quote
         int startPos = buffer.getPos();
         boolean hasEscapeSequence = false;
+        boolean foundQuote = false;
         int count = 0;
+
+        // SIMD-like fast path: process 8 bytes at a time
         while (buffer.getPos() + 8 < buffer.size()) {
             long data = buffer.getLong();
             long maskedEscape = escapeMask(data);
@@ -29,46 +34,65 @@ public class StringParser {
                 int position = getPosition(maskedQuote);
                 count += position;
                 buffer.setPost(buffer.getPos() + position);
+                foundQuote = true;
                 break;
             }
             count += 8;
             buffer.setPost(buffer.getPos() + 8);
         }
 
-
-        if (!hasEscapeSequence) {
-            buffer.next();
-            return new StringToken(buffer.getString(startPos, count));
-        } else {
-            buffer.setPost(startPos);
-            char c;
-            while (true) {
-                if (!buffer.hasNext()) {
-                    throw new IllegalArgumentException("Unexpected end of input in string");
+        // If no quote found yet and no escape, scan remaining bytes
+        if (!foundQuote && !hasEscapeSequence) {
+            while (buffer.hasNext()) {
+                char c = buffer.peek();
+                if (c == '"') {
+                    foundQuote = true;
+                    break;
                 }
-
-                c = buffer.next();
-                if (c == '"') break;
                 if (c == '\\') {
-                    if (!buffer.hasNext()) {
-                        throw new IllegalArgumentException("Unexpected end after escape at pos: " + buffer.getPos());
-                    }
-                    char esc = buffer.next();
-                    sb.append(switch (esc) {
-                        case '"' -> '"';
-                        case '\\' -> '\\';
-                        case '/' -> '/';
-                        case 'b' -> '\b';
-                        case 'f' -> '\f';
-                        case 'n' -> '\n';
-                        case 'r' -> '\r';
-                        case 't' -> '\t';
-                        case 'u' -> parseUnicode();
-                        default -> throw new IllegalArgumentException("Invalid escape character: \\" + esc);
-                    });
-                } else {
-                    sb.append(c);
+                    hasEscapeSequence = true;
+                    break;
                 }
+                count++;
+                buffer.next();
+            }
+        }
+
+        if (foundQuote && !hasEscapeSequence) {
+            buffer.next(); // consume closing quote
+            return new StringToken(buffer.getString(startPos, count));
+        }
+
+        // Slow path: handle escape sequences
+        buffer.setPost(startPos);
+        StringBuilder sb = escapeBuilder.get();
+        sb.setLength(0);
+        while (true) {
+            if (!buffer.hasNext()) {
+                throw new IllegalArgumentException("Unexpected end of input in string");
+            }
+
+            char c = buffer.next();
+            if (c == '"') break;
+            if (c == '\\') {
+                if (!buffer.hasNext()) {
+                    throw new IllegalArgumentException("Unexpected end after escape at pos: " + buffer.getPos());
+                }
+                char esc = buffer.next();
+                sb.append(switch (esc) {
+                    case '"' -> '"';
+                    case '\\' -> '\\';
+                    case '/' -> '/';
+                    case 'b' -> '\b';
+                    case 'f' -> '\f';
+                    case 'n' -> '\n';
+                    case 'r' -> '\r';
+                    case 't' -> '\t';
+                    case 'u' -> parseUnicode();
+                    default -> throw new IllegalArgumentException("Invalid escape character: \\" + esc);
+                });
+            } else {
+                sb.append(c);
             }
         }
         return new StringToken(sb.toString());
@@ -99,10 +123,10 @@ public class StringParser {
             throw new IllegalArgumentException("Invalid unicode escape at pos: " + buffer.getPos());
         }
 
-        StringBuilder hex = new StringBuilder();
+        char[] hex = unicodeBuffer.get();
         for (int i = 0; i < 4; i++) {
-            hex.append(buffer.next());
+            hex[i] = buffer.next();
         }
-        return (char) Integer.parseInt(hex.toString(), 16);
+        return (char) Integer.parseInt(new String(hex, 0, 4), 16);
     }
 }

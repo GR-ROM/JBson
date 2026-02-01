@@ -2,25 +2,21 @@ package su.grinev.json.token;
 
 public class NumberToken extends Token {
 
-    private final Float aFloat;
+    private final Number number;
 
-    public NumberToken(Float aFloat) {
+    public NumberToken(Number number) {
         super(TokenType.NUMBER);
-        this.aFloat = aFloat;
+        this.number = number;
     }
 
-    public Float getNumber() {
-        return aFloat;
-    }
-
-    public Float getaFloat() {
-        return aFloat;
+    public Number getNumber() {
+        return number;
     }
 
     @Override
     public String toString() {
         return "NumberToken{" +
-                "aFloat=" + aFloat +
+                "number=" + number +
                 '}';
     }
 }

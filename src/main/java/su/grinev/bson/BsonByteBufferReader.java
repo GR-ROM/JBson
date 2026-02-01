@@ -2,7 +2,7 @@ package su.grinev.bson;
 
 import lombok.extern.slf4j.Slf4j;
 import su.grinev.exception.BsonException;
-import su.grinev.pool.Pool;
+import su.grinev.pool.FastPool;
 
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
@@ -13,54 +13,46 @@ import static su.grinev.bson.Utility.decodeDecimal128;
 
 @Slf4j
 public class BsonByteBufferReader implements BsonReader {
-    private final ByteBuffer buffer;
-    private final Pool<byte[]> bufferPool;
-    private final Pool<ByteBuffer> byteBufferPool;
+    private static final int STRING_BUFFER_SIZE = 256;
 
-    public BsonByteBufferReader(ByteBuffer buffer, Pool<byte[]> bufferPool, Pool<ByteBuffer> binaryPacketPool) {
+    // Thread-local string buffer - avoids pool overhead for every string read
+    private static final ThreadLocal<byte[]> stringBuffer = ThreadLocal.withInitial(() -> new byte[STRING_BUFFER_SIZE]);
+
+    private final ByteBuffer buffer;
+    private final FastPool<ByteBuffer> byteBufferPool;
+
+    public BsonByteBufferReader(ByteBuffer buffer, FastPool<byte[]> bufferPool, FastPool<ByteBuffer> binaryPacketPool) {
         this.buffer = buffer;
-        this.bufferPool = bufferPool;
+        // bufferPool kept for API compatibility but not used
         this.byteBufferPool = binaryPacketPool;
     }
 
     @Override
     public String readString() {
-        byte[] bytes = bufferPool.get();
-        try {
-            int len = buffer.getInt() - 1;
-
-            bytes = ensureBufferCapacity(bytes, len);
-            buffer.get(bytes, 0, len);
-            buffer.position(buffer.position() + 1);
-
-            return new String(bytes, 0, len, StandardCharsets.UTF_8);
-        } finally {
-            bufferPool.release(bytes);
+        int len = buffer.getInt() - 1;
+        byte[] bytes = stringBuffer.get();
+        if (bytes.length < len) {
+            bytes = new byte[Math.max(len, STRING_BUFFER_SIZE * 2)];
+            stringBuffer.set(bytes);
         }
-    }
-
-    private static byte[] ensureBufferCapacity(byte[] bytes, int len) {
-        if (len > bytes.length) {
-            bytes = new byte[len];
-        }
-        return bytes;
+        buffer.get(bytes, 0, len);
+        buffer.position(buffer.position() + 1);
+        return new String(bytes, 0, len, StandardCharsets.UTF_8);
     }
 
     @Override
     public String readCString() {
-        byte[] bytes = bufferPool.get();
+        int len = 0;
+        for (int i = buffer.position(); buffer.get(i++) != 0; len++) {}
 
-        try {
-            int len = 0;
-            for (int i = buffer.position(); buffer.get(i++) != 0; len++) {}
-
-            bytes = ensureBufferCapacity(bytes, len);
-            buffer.get(bytes, 0, len);
-            buffer.position(buffer.position() + 1);
-            return new String(bytes, 0, len, StandardCharsets.UTF_8);
-        } finally {
-            bufferPool.release(bytes);
+        byte[] bytes = stringBuffer.get();
+        if (bytes.length < len) {
+            bytes = new byte[Math.max(len, STRING_BUFFER_SIZE * 2)];
+            stringBuffer.set(bytes);
         }
+        buffer.get(bytes, 0, len);
+        buffer.position(buffer.position() + 1);
+        return new String(bytes, 0, len, StandardCharsets.UTF_8);
     }
 
     @Override

@@ -3,6 +3,7 @@ package su.grinev.bson;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import su.grinev.exception.BsonException;
+import su.grinev.pool.FastPool;
 import su.grinev.pool.Pool;
 import su.grinev.pool.PoolFactory;
 
@@ -16,11 +17,11 @@ import java.util.function.Supplier;
 
 @Slf4j
 public class BsonObjectReader {
-    private final Pool<ReaderContext> contextPool;
-    private final Pool<byte[]> stringPool;
+    private final FastPool<ReaderContext> contextPool;
+    private final FastPool<byte[]> stringPool;
     private final Pool<byte[]> packetPool;
-    private final Pool<ArrayDeque<ReaderContext>> stackPool;
-    private Pool<ByteBuffer> binaryPacketPool;
+    private final FastPool<ArrayDeque<ReaderContext>> stackPool;
+    private FastPool<ByteBuffer> binaryPacketPool;
     private final int documentSizeLimit;
     @Setter
     private boolean readBinaryAsByteArray = true;
@@ -36,12 +37,12 @@ public class BsonObjectReader {
     ) {
         this.documentSizeLimit = documentSizeLimit;
         this.enableBufferProjection = enableBufferProjection;
-        contextPool = poolFactory.getPool("bson-reader-context-pool", ReaderContext::new);
-        stringPool = poolFactory.getPool("bson-reader-string-pool", () -> new byte[initialCStringSize]);
+        contextPool = poolFactory.getFastPool("bson-reader-context-pool", ReaderContext::new);
+        stringPool = poolFactory.getFastPool("bson-reader-string-pool", () -> new byte[initialCStringSize]);
         packetPool = poolFactory.getPool("bson-reader-input-steam-pool", () -> new byte[documentSizeLimit]);
-        stackPool = poolFactory.getPool("bson-reader-stack-pool", () -> new ArrayDeque<>(64));
+        stackPool = poolFactory.getFastPool("bson-reader-stack-pool", () -> new ArrayDeque<>(64));
         if (!enableBufferProjection) {
-            binaryPacketPool = poolFactory.getPool("bson-reader-packet-pool", byteBufferAllocator);
+            binaryPacketPool = poolFactory.getFastPool("bson-reader-packet-pool", byteBufferAllocator);
         }
     }
 
@@ -77,7 +78,6 @@ public class BsonObjectReader {
                         Object value = doReadValue(bsonReader, ctx, stack, type);
                         map.put(key, value);
 
-                        // Check if a nested context was pushed
                         if (stack.size() > stackSizeBefore) {
                             break;
                         }
@@ -93,7 +93,6 @@ public class BsonObjectReader {
                         Object value = doReadValue(bsonReader, ctx, stack, type);
                         list.add(index++, value);
 
-                        // Check if a nested context was pushed
                         if (stack.size() > stackSizeBefore) {
                             break;
                         }
