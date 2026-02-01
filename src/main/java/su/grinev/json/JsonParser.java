@@ -1,137 +1,137 @@
 package su.grinev.json;
 
+import su.grinev.bson.Document;
 import su.grinev.json.token.NumberToken;
 import su.grinev.json.token.StringToken;
 import su.grinev.json.token.Token;
 
 import java.util.*;
 
-import static su.grinev.json.ParserState.*;
 import static su.grinev.json.token.TokenType.*;
 
 public class JsonParser {
 
+    private List<Token> tokens;
+    private int pos;
+
+    public Document parse(List<Token> tokenList) {
+        return new Document(parseObject(tokenList));
+    }
+
     public Map<String, Object> parseObject(List<Token> tokenList) {
-        int pos;
-        Map<String, Object> rootObject = new HashMap<>();
-        LinkedList<ParserContext> stack = new LinkedList<>();
-        stack.add(new ParserContext(0, rootObject));
+        this.tokens = tokenList;
+        this.pos = 0;
 
-        while (!stack.isEmpty()) {
-            ParserContext context = stack.removeLast();
-            pos = context.pos + 1;
-            if (context.value instanceof Map object) {
-                doParseObject(tokenList, object, pos, stack);
-            } else if (context.value instanceof List object) {
-                doParseArray(tokenList, object, pos, stack);
-            }
+        if (pos >= tokens.size() || tokens.get(pos).getType() != CURLY_OPEN) {
+            throw new IllegalArgumentException("Expected '{'");
         }
+        pos++;
 
-        return rootObject;
+        return parseObjectContent();
     }
 
     public List<Object> parseArray(List<Token> tokenList) {
-        int pos;
-        List<Object> rootArray = new ArrayList<>();
-        LinkedList<ParserContext> stack = new LinkedList<>();
-        stack.add(new ParserContext(0, rootArray));
+        this.tokens = tokenList;
+        this.pos = 0;
 
-        while (!stack.isEmpty()) {
-            ParserContext context = stack.removeLast();
-
-            pos = context.pos + 1;
-            if (context.value instanceof Map object) {
-                 doParseObject(tokenList, object, pos, stack);
-            } else if (context.value instanceof List object) {
-                doParseArray(tokenList, object, pos, stack);
-            }
+        if (pos >= tokens.size() || tokens.get(pos).getType() != SQUARE_OPEN) {
+            throw new IllegalArgumentException("Expected '['");
         }
-        return rootArray;
+        pos++;
+
+        return parseArrayContent();
     }
 
-    private static void doParseObject(List<Token> tokenList, Map<String, Object> object, int pos, List<ParserContext> stack) {
-        ParserState state = EXPECT_KEY;
-        String key = null;
+    private Map<String, Object> parseObjectContent() {
+        Map<String, Object> object = new HashMap<>();
 
-        while (pos < tokenList.size()) {
-            Token token = tokenList.get(pos++);
+        if (pos < tokens.size() && tokens.get(pos).getType() == CURLY_CLOSE) {
+            pos++;
+            return object;
+        }
 
-            if (token.getType() == STRING && state == EXPECT_KEY) {
-                key = ((StringToken) token).getString();
-                state = EXPECT_COLON;
-                continue;
+        while (pos < tokens.size()) {
+            // Expect key
+            Token keyToken = tokens.get(pos++);
+            if (keyToken.getType() != STRING) {
+                throw new IllegalArgumentException("Expected string key at position " + (pos - 1));
+            }
+            String key = ((StringToken) keyToken).getString();
+
+            // Expect colon
+            if (pos >= tokens.size() || tokens.get(pos).getType() != COLON) {
+                throw new IllegalArgumentException("Expected ':' at position " + pos);
+            }
+            pos++;
+
+            // Parse value
+            Object value = parseValue();
+            object.put(key, value);
+
+            // Expect comma or closing brace
+            if (pos >= tokens.size()) {
+                throw new IllegalArgumentException("Unexpected end of input");
             }
 
-            if (token.getType() == COLON && state == EXPECT_COLON) {
-                state = EXPECT_VALUE;
-                continue;
-            }
-
-            if (state == EXPECT_VALUE) {
-                Object value = getValue(token, pos, stack);
-                object.put(key, value);
-                key = null;
-                state = EXPECT_COMMA_OR_CURLY_CLOSE;
-                continue;
-            }
-
-            if (state == EXPECT_COMMA_OR_CURLY_CLOSE) {
-                if (token.getType() == COMMA) {
-                    state = EXPECT_KEY;
-                    continue;
-                }
-
-                if (token.getType() == CURLY_CLOSE) {
-                    break;
-                }
+            Token next = tokens.get(pos);
+            if (next.getType() == CURLY_CLOSE) {
+                pos++;
+                break;
+            } else if (next.getType() == COMMA) {
+                pos++;
+            } else {
+                throw new IllegalArgumentException("Expected ',' or '}' at position " + pos);
             }
         }
+
+        return object;
     }
 
-    private static void doParseArray(List<Token> tokenList, List<Object> object, int pos, List<ParserContext> stack) {
-        ParserState state = EXPECT_VALUE;
+    private List<Object> parseArrayContent() {
+        List<Object> array = new ArrayList<>();
 
-        while (pos < tokenList.size()) {
-            Token token = tokenList.get(pos++);
+        if (pos < tokens.size() && tokens.get(pos).getType() == SQUARE_CLOSE) {
+            pos++;
+            return array;
+        }
 
-            if (state == EXPECT_VALUE) {
-                Object value = getValue(token, pos, stack);
-                object.add(value);
-                state = EXPECT_COMMA_OR_CURLY_CLOSE;
-                continue;
+        while (pos < tokens.size()) {
+            Object value = parseValue();
+            array.add(value);
+
+            if (pos >= tokens.size()) {
+                throw new IllegalArgumentException("Unexpected end of input");
             }
-            if (state == EXPECT_COMMA_OR_CURLY_CLOSE) {
-                if (COMMA.equals(token.getType())) {
-                    state = EXPECT_VALUE;
-                    continue;
-                }
-                if (SQUARE_CLOSE.equals(token.getType())) {
-                    break;
-                }
+
+            Token next = tokens.get(pos);
+            if (next.getType() == SQUARE_CLOSE) {
+                pos++;
+                break;
+            } else if (next.getType() == COMMA) {
+                pos++;
+            } else {
+                throw new IllegalArgumentException("Expected ',' or ']' at position " + pos);
             }
         }
+
+        return array;
     }
 
-    private static Object getValue(Token token, int pos, List<ParserContext> stack) {
+    private Object parseValue() {
+        if (pos >= tokens.size()) {
+            throw new IllegalArgumentException("Unexpected end of input");
+        }
+
+        Token token = tokens.get(pos++);
         return switch (token.getType()) {
             case STRING -> ((StringToken) token).getString();
             case NUMBER -> ((NumberToken) token).getNumber();
             case TRUE -> Boolean.TRUE;
             case FALSE -> Boolean.FALSE;
             case NULL -> null;
-            case CURLY_OPEN -> {
-                Map<String, Object> nestedObject = new HashMap<>();
-                stack.add(new ParserContext(pos - 1, nestedObject));
-                yield nestedObject;
-            }
-            case SQUARE_OPEN -> {
-                List<Object> nestedArray = new ArrayList<>();
-                stack.add(new ParserContext(pos - 1, nestedArray));
-                yield nestedArray;
-            }
-            default -> throw new IllegalArgumentException("Unknown token type");
+            case CURLY_OPEN -> parseObjectContent();
+            case SQUARE_OPEN -> parseArrayContent();
+            default -> throw new IllegalArgumentException("Unexpected token: " + token.getType());
         };
     }
-
-    private record ParserContext(int pos, Object value) { }
 }

@@ -4,6 +4,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.experimental.Accessors;
 
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
@@ -11,20 +12,29 @@ import java.util.Map;
 @Accessors(chain = true)
 @NoArgsConstructor
 public final class WriterContext {
-    int idx;
     int lengthPos = 0;
-    int startPos = 0;
-    Map.Entry<String, Object>[] mapEntries;;
+    int startPos = -1;  // -1 means uninitialized
+
+    // For documents: iterator over map entries
+    Iterator<Map.Entry<String, Object>> mapIterator;
+
+    // For arrays: list and current index
+    List<Object> arrayList;
+    int arrayIndex;
+
+    boolean isArray;
 
     public static WriterContext fillForDocument(
             WriterContext writerContext,
             int lengthPos,
             Map<String, Object> value
-            ) {
-        return writerContext
-                .setLengthPos(lengthPos)
-                .setIdx(0)
-                .setMapEntries(objectToMapEntries(value));
+    ) {
+        writerContext.lengthPos = lengthPos;
+        writerContext.mapIterator = value.entrySet().iterator();
+        writerContext.arrayList = null;
+        writerContext.arrayIndex = 0;
+        writerContext.isArray = false;
+        return writerContext;
     }
 
     public static WriterContext fillForArray(
@@ -32,34 +42,28 @@ public final class WriterContext {
             int lengthPos,
             List<Object> value
     ) {
-        return writerContext
-                .setLengthPos(lengthPos)
-                .setIdx(0)
-                .setMapEntries(listToMapEntries(value));
+        writerContext.lengthPos = lengthPos;
+        writerContext.mapIterator = null;
+        writerContext.arrayList = value;
+        writerContext.arrayIndex = 0;
+        writerContext.isArray = true;
+        return writerContext;
     }
 
-    private static Map.Entry<String, Object>[] objectToMapEntries(Map<String, Object> value) {
-        Map.Entry<String, Object>[] mapEntries = new Map.Entry[value.size()];
-        int i = 0;
-        for (Map.Entry<String, Object> entry : value.entrySet()) {
-            mapEntries[i++] =   Map.entry(entry.getKey(), entry.getValue() == null ? new NullObject() : entry.getValue());
+    public boolean hasNext() {
+        if (isArray) {
+            return arrayIndex < arrayList.size();
+        } else {
+            return mapIterator.hasNext();
         }
-
-        return mapEntries;
     }
 
-    private static Map.Entry<String, Object>[] listToMapEntries(List<Object> value) {
-        Map.Entry<String, Object>[] mapEntries = new Map.Entry[value.size()];
-        int i = 0;
-        for (Object object : value) {
-            mapEntries[i] = Map.entry(Integer.toString(i), object == null ? new NullObject() : object);
-            i++;
-        }
-
-        return mapEntries;
+    public int nextArrayIndex() {
+        return arrayIndex++;
     }
 
     public static class NullObject {
-
+        public static final NullObject INSTANCE = new NullObject();
+        private NullObject() {}
     }
 }

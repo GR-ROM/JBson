@@ -50,6 +50,10 @@ dependencies {
     testImplementation(platform("org.junit:junit-bom:5.13.4"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+
+    // JMH for benchmarking
+    testImplementation 'org.openjdk.jmh:jmh-core:1.37'
+    testAnnotationProcessor 'org.openjdk.jmh:jmh-generator-annprocess:1.37'
 }
 
 java {
@@ -62,4 +66,14 @@ java {
 
 test {
     useJUnitPlatform()
+    testLogging {
+        showStandardStreams = true
+    }
+}
+
+// JMH benchmark task
+task jmh(type: JavaExec) {
+    dependsOn testClasses
+    mainClass = 'org.openjdk.jmh.Main'
+    classpath = sourceSets.test.runtimeClasspath
 }

@@ -1,26 +1,28 @@
 package su.grinev;
 
 import org.junit.jupiter.api.Test;
-import su.grinev.bson.BsonObjectReader;
-import su.grinev.bson.BsonObjectWriter;
 import su.grinev.bson.Document;
+import su.grinev.messagepack.MessagePackReader;
+import su.grinev.messagepack.MessagePackWriter;
+import su.grinev.messagepack.ReaderContext;
+import su.grinev.messagepack.WriterContext;
+import su.grinev.pool.DisposablePool;
 import su.grinev.pool.DynamicByteBuffer;
+import su.grinev.pool.FastPool;
+import su.grinev.pool.Pool;
 import su.grinev.pool.PoolFactory;
-import su.grinev.test.VpnForwardPacketDto;
-import su.grinev.test.VpnRequestDto;
 
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
-import java.time.Instant;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static su.grinev.test.Command.FOO;
 
-public class BsonMapperTests {
+public class MessagePackMapperTests {
 
     @Test
     public void serializeAndDeserializeObjectTest() {
@@ -31,24 +33,39 @@ public class BsonMapperTests {
                 .setBlocking(true)
                 .build();
 
-        BsonMapper bsonMapper = new BsonMapper(poolFactory, 4096, 64, () -> ByteBuffer.allocateDirect(4096));
-        bsonMapper.getBsonObjectReader().setReadBinaryAsByteArray(false);
-        VpnRequestDto<VpnForwardPacketDto> vpnRequestDto = VpnRequestDto.wrap(FOO, VpnForwardPacketDto.builder()
-                .packet(ByteBuffer.allocateDirect(1024))
-                .build());
+        FastPool<byte[]> stringPool = poolFactory.getFastPool(() -> new byte[256]);
+        FastPool<ReaderContext> readerContextPool = poolFactory.getFastPool(ReaderContext::new);
+        FastPool<ArrayDeque<ReaderContext>> stackPool = poolFactory.getFastPool(() -> new ArrayDeque<>(64));
+        Pool<WriterContext> writerContextPool = poolFactory.getPool(WriterContext::new);
+        DisposablePool<DynamicByteBuffer> bufferPool = poolFactory.getDisposablePool(() -> new DynamicByteBuffer(8192, true));
 
-        for (int i = 0; i < vpnRequestDto.getData().getPacket().limit(); i++) {
-            vpnRequestDto.getData().getPacket().put(i, (byte) i);
+        MessagePackWriter writer = new MessagePackWriter(bufferPool, writerContextPool);
+        MessagePackReader reader = new MessagePackReader(stringPool, readerContextPool, stackPool, false, false);
+
+        byte[] packet = new byte[1024];
+        for (int i = 0; i < packet.length; i++) {
+            packet[i] = (byte) i;
         }
 
-        vpnRequestDto.setTimestamp(Instant.ofEpochMilli(Instant.now().toEpochMilli()));
+        Map<String, Object> data = new HashMap<>();
+        data.put("packet", packet);
 
-        DynamicByteBuffer b = bsonMapper.serialize(vpnRequestDto);
+        Map<String, Object> request = new HashMap<>();
+        request.put("command", "FOO");
+        request.put("data", data);
+        request.put("timestamp", System.currentTimeMillis());
+
+        Document original = new Document(request);
+
+        DynamicByteBuffer b = writer.serialize(original);
         b.flip();
-        VpnRequestDto<?> deserialized = bsonMapper.deserialize(b.getBuffer(), VpnRequestDto.class);
-
+        Document deserialized = reader.deserialize(b.getBuffer());
         b.dispose();
-        assertEquals(vpnRequestDto, deserialized);
+        bufferPool.release(b);
+
+        assertEquals(original.get("command"), deserialized.get("command"));
+        assertEquals(original.get("timestamp"), ((Number) deserialized.get("timestamp")).longValue());
+        assertArrayEquals((byte[]) original.get("data.packet"), (byte[]) deserialized.get("data.packet"));
     }
 
     @Test
@@ -56,7 +73,6 @@ public class BsonMapperTests {
         final int WARMUP_ITERATIONS = 5000;
         final int BENCHMARK_ITERATIONS = 10000;
 
-        Binder binder = new Binder();
         PoolFactory poolFactory = PoolFactory.Builder.builder()
                 .setMinPoolSize(10)
                 .setMaxPoolSize(1000)
@@ -64,68 +80,84 @@ public class BsonMapperTests {
                 .setOutOfPoolTimeout(1000)
                 .build();
 
-        BsonObjectWriter bsonObjectWriter = new BsonObjectWriter(poolFactory, 129 * 1024, true);
-        BsonObjectReader bsonObjectReader = new BsonObjectReader(poolFactory, 129  * 1024, 128, true, () -> ByteBuffer.allocateDirect(4096));
-        bsonObjectReader.setReadBinaryAsByteArray(false);
+        FastPool<byte[]> stringPool = poolFactory.getFastPool(() -> new byte[256]);
+        FastPool<ReaderContext> readerContextPool = poolFactory.getFastPool(ReaderContext::new);
+        FastPool<ArrayDeque<ReaderContext>> stackPool = poolFactory.getFastPool(() -> new ArrayDeque<>(64));
+        Pool<WriterContext> writerContextPool = poolFactory.getPool(WriterContext::new);
+        DisposablePool<DynamicByteBuffer> bufferPool = poolFactory.getDisposablePool(() -> new DynamicByteBuffer(256 * 1024, true));
 
-        VpnRequestDto<VpnForwardPacketDto> requestDto = VpnRequestDto.wrap(FOO, VpnForwardPacketDto.builder()
-                .packet(ByteBuffer.allocateDirect(128 * 1024))
-                .build());
+        MessagePackWriter writer = new MessagePackWriter(bufferPool, writerContextPool);
+        MessagePackReader reader = new MessagePackReader(stringPool, readerContextPool, stackPool, true, true);
+
+        // Create 128KB payload
+        byte[] packet = new byte[128 * 1024];
+        for (int i = 0; i < packet.length; i++) {
+            packet[i] = (byte) (i % 128);
+        }
+
+        Map<String, Object> data = new HashMap<>();
+        data.put("packet", packet);
+
+        Map<String, Object> request = new HashMap<>();
+        request.put("command", "FOO");
+        request.put("data", data);
+
+        Document document = new Document(request);
 
         // Warm-up phase: allow JIT to optimize hot paths
         System.out.println("Warming up for " + WARMUP_ITERATIONS + " iterations...");
         for (int i = 0; i < WARMUP_ITERATIONS; i++) {
-            requestDto.getData().getPacket().clear();
-            for (int b = 0; b < requestDto.getData().getPacket().limit(); b++) {
-                requestDto.getData().getPacket().put(b, (byte) ((byte) b % 128));
-            }
-
-            Document documentMap = binder.unbind(requestDto);
-            DynamicByteBuffer b = bsonObjectWriter.serialize(documentMap);
+            DynamicByteBuffer b = writer.serialize(document);
             b.flip();
-            Document deserialized = bsonObjectReader.deserialize(b.getBuffer());
+            Document deserialized = reader.deserialize(b.getBuffer());
             b.dispose();
-            binder.bind(VpnRequestDto.class, deserialized);
+            bufferPool.release(b);
         }
         System.out.println("Warm-up complete. Running benchmark...");
 
         // Benchmark phase
         List<Long> serializationTime = new ArrayList<>();
         List<Long> deserializationTime = new ArrayList<>();
-        Document deserialized = new Document(Map.of(), 0);
-        Object request1;
+        Document deserialized = null;
 
         for (int i = 0; i < BENCHMARK_ITERATIONS; i++) {
-            requestDto.getData().getPacket().clear();
-            for (int b = 0; b < requestDto.getData().getPacket().limit(); b++) {
-                requestDto.getData().getPacket().put(b, (byte) ((byte) b % 128));
-            }
-
-            Document documentMap = binder.unbind(requestDto);
             long delta = System.nanoTime();
-            DynamicByteBuffer b = bsonObjectWriter.serialize(documentMap);
+            DynamicByteBuffer b = writer.serialize(document);
             serializationTime.add(System.nanoTime() - delta);
             b.flip();
-            delta = System.nanoTime();
-            deserialized = bsonObjectReader.deserialize(b.getBuffer());
-            b.dispose();
-            deserializationTime.add(System.nanoTime() - delta);
-            request1 = binder.bind(VpnRequestDto.class, deserialized);
 
-            for (int j = 0; j < requestDto.getData().getPacket().limit(); j++) {
-                assertEquals(requestDto.getData().getPacket().get(j), ((VpnRequestDto<VpnForwardPacketDto>)request1).getData().getPacket().get(j));
+            delta = System.nanoTime();
+            deserialized = reader.deserialize(b.getBuffer());
+            deserializationTime.add(System.nanoTime() - delta);
+
+            b.dispose();
+            bufferPool.release(b);
+
+            // Verify data integrity
+            byte[] deserializedPacket = new  byte[128 * 1024];
+            ByteBuffer bb = ((ByteBuffer) deserialized.get("data.packet"));
+            for (int i1 = 0; i1 < 128*1024; i1++) {
+                deserializedPacket[i1] = bb.get(i1);
+            }
+
+            for (int j = 0; j < packet.length; j++) {
+                assertEquals(packet[j], deserializedPacket[j]);
             }
         }
-        System.out.println(deserialized);
 
         List<Long> sortedSerialization = serializationTime.stream().sorted().toList();
         List<Long> sortedDeserialization = deserializationTime.stream().sorted().toList();
 
         long serMedian = sortedSerialization.get(sortedSerialization.size() / 2);
         long deserMedian = sortedDeserialization.get(sortedDeserialization.size() / 2);
+        long serP99 = sortedSerialization.get((int) (sortedSerialization.size() * 0.99));
+        long deserP99 = sortedDeserialization.get((int) (sortedDeserialization.size() * 0.99));
 
+        System.out.println("=== MessagePack Performance (128KB payload) ===");
         System.out.println("Serialization median time: %.3fus".formatted(serMedian / 1000.0));
+        System.out.println("Serialization p99 time: %.3fus".formatted(serP99 / 1000.0));
         System.out.println("Deserialization median time: %.3fus".formatted(deserMedian / 1000.0));
+        System.out.println("Deserialization p99 time: %.3fus".formatted(deserP99 / 1000.0));
     }
 
     @Test
@@ -140,8 +172,14 @@ public class BsonMapperTests {
                 .setOutOfPoolTimeout(1000)
                 .build();
 
-        BsonObjectWriter bsonObjectWriter = new BsonObjectWriter(poolFactory, 512 * 1024, true);
-        BsonObjectReader bsonObjectReader = new BsonObjectReader(poolFactory, 512 * 1024, 256, true, () -> ByteBuffer.allocateDirect(4096));
+        FastPool<byte[]> stringPool = poolFactory.getFastPool(() -> new byte[256]);
+        FastPool<ReaderContext> readerContextPool = poolFactory.getFastPool(ReaderContext::new);
+        FastPool<ArrayDeque<ReaderContext>> stackPool = poolFactory.getFastPool(() -> new ArrayDeque<>(64));
+        Pool<WriterContext> writerContextPool = poolFactory.getPool(WriterContext::new);
+        DisposablePool<DynamicByteBuffer> bufferPool = poolFactory.getDisposablePool(() -> new DynamicByteBuffer(512 * 1024, true));
+
+        MessagePackWriter writer = new MessagePackWriter(bufferPool, writerContextPool);
+        MessagePackReader reader = new MessagePackReader(stringPool, readerContextPool, stackPool, true, true);
 
         // Create 1000 nested objects
         Map<String, Object> fields = new HashMap<>();
@@ -158,10 +196,11 @@ public class BsonMapperTests {
         // Warm-up phase
         System.out.println("Warming up for " + WARMUP_ITERATIONS + " iterations...");
         for (int i = 0; i < WARMUP_ITERATIONS; i++) {
-            DynamicByteBuffer b = bsonObjectWriter.serialize(document);
+            DynamicByteBuffer b = writer.serialize(document);
             b.flip();
-            bsonObjectReader.deserialize(b.getBuffer());
+            reader.deserialize(b.getBuffer());
             b.dispose();
+            bufferPool.release(b);
         }
         System.out.println("Warm-up complete. Running benchmark...");
 
@@ -171,12 +210,12 @@ public class BsonMapperTests {
 
         for (int i = 0; i < BENCHMARK_ITERATIONS; i++) {
             long delta = System.nanoTime();
-            DynamicByteBuffer b = bsonObjectWriter.serialize(document);
+            DynamicByteBuffer b = writer.serialize(document);
             serializationTime.add(System.nanoTime() - delta);
             b.flip();
 
             delta = System.nanoTime();
-            Document deserialized = bsonObjectReader.deserialize(b.getBuffer());
+            Document deserialized = reader.deserialize(b.getBuffer());
             deserializationTime.add(System.nanoTime() - delta);
 
             // Validate ALL deserialized data
@@ -191,6 +230,7 @@ public class BsonMapperTests {
             }
 
             b.dispose();
+            bufferPool.release(b);
         }
 
         List<Long> sortedSerialization = serializationTime.stream().sorted().toList();
@@ -201,11 +241,10 @@ public class BsonMapperTests {
         long serP99 = sortedSerialization.get((int) (sortedSerialization.size() * 0.99));
         long deserP99 = sortedDeserialization.get((int) (sortedDeserialization.size() * 0.99));
 
-        System.out.println("=== BSON Performance (1000 nested objects) ===");
+        System.out.println("=== MessagePack Performance (1000 nested objects) ===");
         System.out.println("Serialization median time: %.3fus".formatted(serMedian / 1000.0));
         System.out.println("Serialization p99 time: %.3fus".formatted(serP99 / 1000.0));
         System.out.println("Deserialization median time: %.3fus".formatted(deserMedian / 1000.0));
         System.out.println("Deserialization p99 time: %.3fus".formatted(deserP99 / 1000.0));
     }
-
 }
