@@ -1,6 +1,6 @@
 package su.grinev.messagepack;
 
-import su.grinev.bson.Document;
+import su.grinev.BinaryDocument;
 import su.grinev.pool.DisposablePool;
 import su.grinev.pool.DynamicByteBuffer;
 import su.grinev.pool.Pool;
@@ -8,6 +8,7 @@ import su.grinev.pool.Pool;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -16,6 +17,7 @@ public class MessagePackWriter {
 
     private final DisposablePool<DynamicByteBuffer> bufferPool;
     private final Pool<WriterContext> contextPool;
+    private final Map<Integer, byte[]> keyCache = new HashMap<>();
 
     public MessagePackWriter(DisposablePool<DynamicByteBuffer> bufferPool, Pool<WriterContext> contextPool) {
         this.bufferPool = bufferPool;
@@ -23,8 +25,8 @@ public class MessagePackWriter {
     }
 
     @SuppressWarnings("unchecked")
-    public DynamicByteBuffer serialize(Document document) {
-        Map<String, Object> documentMap = document.getDocumentMap();
+    public DynamicByteBuffer serialize(BinaryDocument document) {
+        Map<Integer, Object> documentMap = document.getDocumentMap();
         DynamicByteBuffer buffer = bufferPool.get();
         buffer.getBuffer().clear().order(ByteOrder.BIG_ENDIAN);
         LinkedList<WriterContext> stack = new LinkedList<>();
@@ -37,8 +39,9 @@ public class MessagePackWriter {
             int stackSize = stack.size();
 
             while (context.objectMap.hasNext()) {
-                Map.Entry<String, Object> entry = context.objectMap.next();
-                writeString(buffer, entry.getKey());
+                Map.Entry<Integer, Object> entry = context.objectMap.next();
+                //writeString(buffer, entry.getKey());
+                writeInt(buffer, entry.getKey());
 
                 Object value = entry.getValue();
                 if (value instanceof Map map) {
@@ -58,6 +61,15 @@ public class MessagePackWriter {
         }
 
         return buffer;
+    }
+
+    private byte[] computeKey(Integer key) {
+        if (key < 127) {
+            return keyCache.computeIfAbsent(key, k -> new byte[]{(byte) (key & 0x7F)});
+        } else if (key < 32768) {
+            return keyCache.computeIfAbsent(key, k -> new byte[]{(byte) 0xFF, (byte) (key & 0xFF), (byte) ((key >> 8) & 0xFF) });
+        }
+        throw new IllegalArgumentException("key out of range");
     }
 
     private void writeMapHeader(DynamicByteBuffer buffer, int size) {
@@ -111,8 +123,8 @@ public class MessagePackWriter {
             case Map map -> {
                 writeMapHeader(buffer, map.size());
                 for (Object e : map.entrySet()) {
-                    Map.Entry<String, Object> entry = (Map.Entry<String, Object>) e;
-                    writeString(buffer, entry.getKey());
+                    Map.Entry<Integer, Object> entry = (Map.Entry<Integer, Object>) e;
+                    writeInt(buffer, entry.getKey());
                     writeValue(buffer, entry.getValue());
                 }
             }

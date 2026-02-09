@@ -3,17 +3,14 @@ package su.grinev;
 import org.junit.jupiter.api.Test;
 import su.grinev.bson.BsonObjectReader;
 import su.grinev.bson.BsonObjectWriter;
-import su.grinev.bson.Document;
 import su.grinev.pool.DynamicByteBuffer;
 import su.grinev.pool.PoolFactory;
 import su.grinev.test.VpnForwardPacketDto;
 import su.grinev.test.VpnRequestDto;
 
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -65,7 +62,7 @@ public class BsonMapperTests {
                 .build();
 
         BsonObjectWriter bsonObjectWriter = new BsonObjectWriter(poolFactory, 129 * 1024, true);
-        BsonObjectReader bsonObjectReader = new BsonObjectReader(poolFactory, 129  * 1024, 128, true, () -> ByteBuffer.allocateDirect(4096));
+        BsonObjectReader bsonObjectReader = new BsonObjectReader(poolFactory, 129  * 1024, true, () -> ByteBuffer.allocateDirect(4096));
         bsonObjectReader.setReadBinaryAsByteArray(false);
 
         VpnRequestDto<VpnForwardPacketDto> requestDto = VpnRequestDto.wrap(FOO, VpnForwardPacketDto.builder()
@@ -80,10 +77,10 @@ public class BsonMapperTests {
                 requestDto.getData().getPacket().put(b, (byte) ((byte) b % 128));
             }
 
-            Document documentMap = binder.unbind(requestDto);
+            BinaryDocument documentMap = binder.unbind(requestDto);
             DynamicByteBuffer b = bsonObjectWriter.serialize(documentMap);
             b.flip();
-            Document deserialized = bsonObjectReader.deserialize(b.getBuffer());
+            BinaryDocument deserialized = bsonObjectReader.deserialize(b.getBuffer());
             b.dispose();
             binder.bind(VpnRequestDto.class, deserialized);
         }
@@ -92,7 +89,7 @@ public class BsonMapperTests {
         // Benchmark phase
         List<Long> serializationTime = new ArrayList<>();
         List<Long> deserializationTime = new ArrayList<>();
-        Document deserialized = new Document(Map.of(), 0);
+        BinaryDocument deserialized = new BinaryDocument(Map.of(), 0);
         Object request1;
 
         for (int i = 0; i < BENCHMARK_ITERATIONS; i++) {
@@ -101,7 +98,7 @@ public class BsonMapperTests {
                 requestDto.getData().getPacket().put(b, (byte) ((byte) b % 128));
             }
 
-            Document documentMap = binder.unbind(requestDto);
+            BinaryDocument documentMap = binder.unbind(requestDto);
             long delta = System.nanoTime();
             DynamicByteBuffer b = bsonObjectWriter.serialize(documentMap);
             serializationTime.add(System.nanoTime() - delta);
@@ -126,86 +123,6 @@ public class BsonMapperTests {
 
         System.out.println("Serialization median time: %.3fus".formatted(serMedian / 1000.0));
         System.out.println("Deserialization median time: %.3fus".formatted(deserMedian / 1000.0));
-    }
-
-    @Test
-    public void performanceTestManyFields() {
-        final int WARMUP_ITERATIONS = 5000;
-        final int BENCHMARK_ITERATIONS = 10000;
-
-        PoolFactory poolFactory = PoolFactory.Builder.builder()
-                .setMinPoolSize(100)
-                .setMaxPoolSize(2000)
-                .setBlocking(true)
-                .setOutOfPoolTimeout(1000)
-                .build();
-
-        BsonObjectWriter bsonObjectWriter = new BsonObjectWriter(poolFactory, 512 * 1024, true);
-        BsonObjectReader bsonObjectReader = new BsonObjectReader(poolFactory, 512 * 1024, 256, true, () -> ByteBuffer.allocateDirect(4096));
-
-        // Create 1000 nested objects
-        Map<String, Object> fields = new HashMap<>();
-        for (int i = 0; i < 1000; i++) {
-            Map<String, Object> nested = new HashMap<>();
-            nested.put("id", i);
-            nested.put("name", "item_" + i);
-            nested.put("active", i % 2 == 0);
-            nested.put("score", i * 1.5);
-            fields.put("field_" + i, nested);
-        }
-        Document document = new Document(fields);
-
-        // Warm-up phase
-        System.out.println("Warming up for " + WARMUP_ITERATIONS + " iterations...");
-        for (int i = 0; i < WARMUP_ITERATIONS; i++) {
-            DynamicByteBuffer b = bsonObjectWriter.serialize(document);
-            b.flip();
-            bsonObjectReader.deserialize(b.getBuffer());
-            b.dispose();
-        }
-        System.out.println("Warm-up complete. Running benchmark...");
-
-        // Benchmark phase
-        List<Long> serializationTime = new ArrayList<>();
-        List<Long> deserializationTime = new ArrayList<>();
-
-        for (int i = 0; i < BENCHMARK_ITERATIONS; i++) {
-            long delta = System.nanoTime();
-            DynamicByteBuffer b = bsonObjectWriter.serialize(document);
-            serializationTime.add(System.nanoTime() - delta);
-            b.flip();
-
-            delta = System.nanoTime();
-            Document deserialized = bsonObjectReader.deserialize(b.getBuffer());
-            deserializationTime.add(System.nanoTime() - delta);
-
-            // Validate ALL deserialized data
-            assertEquals(1000, deserialized.getDocumentMap().size(), "Document should have 1000 fields");
-            for (int j = 0; j < 1000; j++) {
-                @SuppressWarnings("unchecked")
-                Map<String, Object> nested = (Map<String, Object>) deserialized.getDocumentMap().get("field_" + j);
-                assertEquals(j, ((Number) nested.get("id")).intValue());
-                assertEquals("item_" + j, nested.get("name"));
-                assertEquals(j % 2 == 0, nested.get("active"));
-                assertEquals(j * 1.5, ((Number) nested.get("score")).doubleValue(), 0.001);
-            }
-
-            b.dispose();
-        }
-
-        List<Long> sortedSerialization = serializationTime.stream().sorted().toList();
-        List<Long> sortedDeserialization = deserializationTime.stream().sorted().toList();
-
-        long serMedian = sortedSerialization.get(sortedSerialization.size() / 2);
-        long deserMedian = sortedDeserialization.get(sortedDeserialization.size() / 2);
-        long serP99 = sortedSerialization.get((int) (sortedSerialization.size() * 0.99));
-        long deserP99 = sortedDeserialization.get((int) (sortedDeserialization.size() * 0.99));
-
-        System.out.println("=== BSON Performance (1000 nested objects) ===");
-        System.out.println("Serialization median time: %.3fus".formatted(serMedian / 1000.0));
-        System.out.println("Serialization p99 time: %.3fus".formatted(serP99 / 1000.0));
-        System.out.println("Deserialization median time: %.3fus".formatted(deserMedian / 1000.0));
-        System.out.println("Deserialization p99 time: %.3fus".formatted(deserP99 / 1000.0));
     }
 
 }

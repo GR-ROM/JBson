@@ -1,6 +1,6 @@
 package su.grinev.json;
 
-import su.grinev.bson.Document;
+import su.grinev.Document;
 import su.grinev.json.token.Token;
 
 import java.util.List;

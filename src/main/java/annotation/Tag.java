@@ -7,6 +7,6 @@ import java.lang.annotation.Target;
 
 @Target(ElementType.FIELD)
 @Retention(RetentionPolicy.RUNTIME)
-public @interface BsonType {
-    int discriminator();
+public @interface Tag {
+    int value();
 }

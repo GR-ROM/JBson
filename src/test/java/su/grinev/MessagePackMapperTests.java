@@ -1,14 +1,12 @@
 package su.grinev;
 
 import org.junit.jupiter.api.Test;
-import su.grinev.bson.Document;
 import su.grinev.messagepack.MessagePackReader;
 import su.grinev.messagepack.MessagePackWriter;
 import su.grinev.messagepack.ReaderContext;
 import su.grinev.messagepack.WriterContext;
 import su.grinev.pool.DisposablePool;
 import su.grinev.pool.DynamicByteBuffer;
-import su.grinev.pool.FastPool;
 import su.grinev.pool.Pool;
 import su.grinev.pool.PoolFactory;
 
@@ -33,39 +31,37 @@ public class MessagePackMapperTests {
                 .setBlocking(true)
                 .build();
 
-        FastPool<byte[]> stringPool = poolFactory.getFastPool(() -> new byte[256]);
-        FastPool<ReaderContext> readerContextPool = poolFactory.getFastPool(ReaderContext::new);
-        FastPool<ArrayDeque<ReaderContext>> stackPool = poolFactory.getFastPool(() -> new ArrayDeque<>(64));
+        Pool<ReaderContext> readerContextPool = poolFactory.getPool(ReaderContext::new);
+        Pool<ArrayDeque<ReaderContext>> stackPool = poolFactory.getPool(() -> new ArrayDeque<>(64));
         Pool<WriterContext> writerContextPool = poolFactory.getPool(WriterContext::new);
         DisposablePool<DynamicByteBuffer> bufferPool = poolFactory.getDisposablePool(() -> new DynamicByteBuffer(8192, true));
 
         MessagePackWriter writer = new MessagePackWriter(bufferPool, writerContextPool);
-        MessagePackReader reader = new MessagePackReader(stringPool, readerContextPool, stackPool, false, false);
+        MessagePackReader reader = new MessagePackReader(readerContextPool, stackPool, false, false);
 
         byte[] packet = new byte[1024];
         for (int i = 0; i < packet.length; i++) {
             packet[i] = (byte) i;
         }
 
-        Map<String, Object> data = new HashMap<>();
-        data.put("packet", packet);
+        Map<Integer, Object> data = new HashMap<>();
+        data.put(0, packet);
 
-        Map<String, Object> request = new HashMap<>();
-        request.put("command", "FOO");
-        request.put("data", data);
-        request.put("timestamp", System.currentTimeMillis());
+        Map<Integer, Object> request = new HashMap<>();
+        request.put(0, "FOO");
+        request.put(1, data);
+        request.put(2, System.currentTimeMillis());
 
-        Document original = new Document(request);
+        BinaryDocument original = new BinaryDocument(request);
 
         DynamicByteBuffer b = writer.serialize(original);
         b.flip();
-        Document deserialized = reader.deserialize(b.getBuffer());
+        BinaryDocument deserialized = reader.deserialize(b.getBuffer());
         b.dispose();
-        bufferPool.release(b);
 
-        assertEquals(original.get("command"), deserialized.get("command"));
-        assertEquals(original.get("timestamp"), ((Number) deserialized.get("timestamp")).longValue());
-        assertArrayEquals((byte[]) original.get("data.packet"), (byte[]) deserialized.get("data.packet"));
+        assertEquals(original.get("0"), deserialized.get("0"));
+        assertEquals(original.get("2"), ((Number) deserialized.get("2")).longValue());
+        assertArrayEquals((byte[]) original.get("1.0"), (byte[]) deserialized.get("1.0"));
     }
 
     @Test
@@ -80,14 +76,13 @@ public class MessagePackMapperTests {
                 .setOutOfPoolTimeout(1000)
                 .build();
 
-        FastPool<byte[]> stringPool = poolFactory.getFastPool(() -> new byte[256]);
-        FastPool<ReaderContext> readerContextPool = poolFactory.getFastPool(ReaderContext::new);
-        FastPool<ArrayDeque<ReaderContext>> stackPool = poolFactory.getFastPool(() -> new ArrayDeque<>(64));
+        Pool<ReaderContext> readerContextPool = poolFactory.getPool(ReaderContext::new);
+        Pool<ArrayDeque<ReaderContext>> stackPool = poolFactory.getPool(() -> new ArrayDeque<>(64));
         Pool<WriterContext> writerContextPool = poolFactory.getPool(WriterContext::new);
         DisposablePool<DynamicByteBuffer> bufferPool = poolFactory.getDisposablePool(() -> new DynamicByteBuffer(256 * 1024, true));
 
         MessagePackWriter writer = new MessagePackWriter(bufferPool, writerContextPool);
-        MessagePackReader reader = new MessagePackReader(stringPool, readerContextPool, stackPool, true, true);
+        MessagePackReader reader = new MessagePackReader(readerContextPool, stackPool, true, true);
 
         // Create 128KB payload
         byte[] packet = new byte[128 * 1024];
@@ -95,30 +90,29 @@ public class MessagePackMapperTests {
             packet[i] = (byte) (i % 128);
         }
 
-        Map<String, Object> data = new HashMap<>();
-        data.put("packet", packet);
+        Map<Integer, Object> data = new HashMap<>();
+        data.put(0, packet);
 
-        Map<String, Object> request = new HashMap<>();
-        request.put("command", "FOO");
-        request.put("data", data);
+        Map<Integer, Object> request = new HashMap<>();
+        request.put(0, "FOO");
+        request.put(1, data);
 
-        Document document = new Document(request);
+        BinaryDocument document = new BinaryDocument(request);
 
         // Warm-up phase: allow JIT to optimize hot paths
         System.out.println("Warming up for " + WARMUP_ITERATIONS + " iterations...");
         for (int i = 0; i < WARMUP_ITERATIONS; i++) {
             DynamicByteBuffer b = writer.serialize(document);
             b.flip();
-            Document deserialized = reader.deserialize(b.getBuffer());
+            BinaryDocument deserialized = reader.deserialize(b.getBuffer());
             b.dispose();
-            bufferPool.release(b);
         }
         System.out.println("Warm-up complete. Running benchmark...");
 
         // Benchmark phase
         List<Long> serializationTime = new ArrayList<>();
         List<Long> deserializationTime = new ArrayList<>();
-        Document deserialized = null;
+        BinaryDocument deserialized = null;
 
         for (int i = 0; i < BENCHMARK_ITERATIONS; i++) {
             long delta = System.nanoTime();
@@ -131,11 +125,10 @@ public class MessagePackMapperTests {
             deserializationTime.add(System.nanoTime() - delta);
 
             b.dispose();
-            bufferPool.release(b);
 
             // Verify data integrity
             byte[] deserializedPacket = new  byte[128 * 1024];
-            ByteBuffer bb = ((ByteBuffer) deserialized.get("data.packet"));
+            ByteBuffer bb = ((ByteBuffer) deserialized.get("1.0"));
             for (int i1 = 0; i1 < 128*1024; i1++) {
                 deserializedPacket[i1] = bb.get(i1);
             }
@@ -172,26 +165,25 @@ public class MessagePackMapperTests {
                 .setOutOfPoolTimeout(1000)
                 .build();
 
-        FastPool<byte[]> stringPool = poolFactory.getFastPool(() -> new byte[256]);
-        FastPool<ReaderContext> readerContextPool = poolFactory.getFastPool(ReaderContext::new);
-        FastPool<ArrayDeque<ReaderContext>> stackPool = poolFactory.getFastPool(() -> new ArrayDeque<>(64));
+        Pool<ReaderContext> readerContextPool = poolFactory.getPool(ReaderContext::new);
+        Pool<ArrayDeque<ReaderContext>> stackPool = poolFactory.getPool(() -> new ArrayDeque<>(64));
         Pool<WriterContext> writerContextPool = poolFactory.getPool(WriterContext::new);
         DisposablePool<DynamicByteBuffer> bufferPool = poolFactory.getDisposablePool(() -> new DynamicByteBuffer(512 * 1024, true));
 
         MessagePackWriter writer = new MessagePackWriter(bufferPool, writerContextPool);
-        MessagePackReader reader = new MessagePackReader(stringPool, readerContextPool, stackPool, true, true);
+        MessagePackReader reader = new MessagePackReader(readerContextPool, stackPool, true, true);
 
         // Create 1000 nested objects
-        Map<String, Object> fields = new HashMap<>();
+        Map<Integer, Object> fields = new HashMap<>();
         for (int i = 0; i < 1000; i++) {
-            Map<String, Object> nested = new HashMap<>();
-            nested.put("id", i);
-            nested.put("name", "item_" + i);
-            nested.put("active", i % 2 == 0);
-            nested.put("score", i * 1.5);
-            fields.put("field_" + i, nested);
+            Map<Integer, Object> nested = new HashMap<>();
+            nested.put(0, i);
+            nested.put(1, "item_" + i);
+            nested.put(2, i % 2 == 0);
+            nested.put(3, i * 1.5);
+            fields.put(i, nested);
         }
-        Document document = new Document(fields);
+        BinaryDocument document = new BinaryDocument(fields);
 
         // Warm-up phase
         System.out.println("Warming up for " + WARMUP_ITERATIONS + " iterations...");
@@ -200,7 +192,6 @@ public class MessagePackMapperTests {
             b.flip();
             reader.deserialize(b.getBuffer());
             b.dispose();
-            bufferPool.release(b);
         }
         System.out.println("Warm-up complete. Running benchmark...");
 
@@ -215,22 +206,21 @@ public class MessagePackMapperTests {
             b.flip();
 
             delta = System.nanoTime();
-            Document deserialized = reader.deserialize(b.getBuffer());
+            BinaryDocument deserialized = reader.deserialize(b.getBuffer());
             deserializationTime.add(System.nanoTime() - delta);
 
             // Validate ALL deserialized data
             assertEquals(1000, deserialized.getDocumentMap().size(), "Document should have 1000 fields");
             for (int j = 0; j < 1000; j++) {
                 @SuppressWarnings("unchecked")
-                Map<String, Object> nested = (Map<String, Object>) deserialized.getDocumentMap().get("field_" + j);
-                assertEquals(j, ((Number) nested.get("id")).intValue());
-                assertEquals("item_" + j, nested.get("name"));
-                assertEquals(j % 2 == 0, nested.get("active"));
-                assertEquals(j * 1.5, ((Number) nested.get("score")).doubleValue(), 0.001);
+                Map<Integer, Object> nested = (Map<Integer, Object>) deserialized.getDocumentMap().get(j);
+                assertEquals(j, ((Number) nested.get(0)).intValue());
+                assertEquals("item_" + j, nested.get(1));
+                assertEquals(j % 2 == 0, nested.get(2));
+                assertEquals(j * 1.5, ((Number) nested.get(3)).doubleValue(), 0.001);
             }
 
             b.dispose();
-            bufferPool.release(b);
         }
 
         List<Long> sortedSerialization = serializationTime.stream().sorted().toList();

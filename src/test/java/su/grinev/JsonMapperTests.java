@@ -1,7 +1,6 @@
 package su.grinev;
 
 import org.junit.jupiter.api.Test;
-import su.grinev.bson.Document;
 import su.grinev.json.JsonParser;
 import su.grinev.json.JsonWriter;
 import su.grinev.json.Tokenizer;
@@ -73,7 +72,7 @@ public class JsonMapperTests {
     }
 
     @Test
-    public void performanceTest() {
+    public void performanceTest1kbStringPayload() {
         final int WARMUP_ITERATIONS = 5000;
         final int BENCHMARK_ITERATIONS = 10000;
 

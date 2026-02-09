@@ -5,14 +5,12 @@ import org.openjdk.jmh.runner.Runner;
 import org.openjdk.jmh.runner.RunnerException;
 import org.openjdk.jmh.runner.options.Options;
 import org.openjdk.jmh.runner.options.OptionsBuilder;
-import su.grinev.bson.Document;
 import su.grinev.messagepack.MessagePackReader;
 import su.grinev.messagepack.MessagePackWriter;
 import su.grinev.messagepack.ReaderContext;
 import su.grinev.messagepack.WriterContext;
 import su.grinev.pool.DisposablePool;
 import su.grinev.pool.DynamicByteBuffer;
-import su.grinev.pool.FastPool;
 import su.grinev.pool.Pool;
 import su.grinev.pool.PoolFactory;
 
@@ -33,11 +31,11 @@ public class MessagePackBenchmark {
 
     private MessagePackWriter messagePackWriter;
     private MessagePackReader messagePackReader;
-    private Document document128kb;
+    private BinaryDocument document128kb;
     private ByteBuffer serialized128kb;
-    private Document manyFieldsDocument;
+    private BinaryDocument manyFieldsDocument;
     private ByteBuffer manyFieldsSerialized;
-    private Document simpleDocument;
+    private BinaryDocument simpleDocument;
     private ByteBuffer simpleSerialized;
     private DisposablePool<DynamicByteBuffer> bufferPool;
 
@@ -50,15 +48,13 @@ public class MessagePackBenchmark {
                 .setOutOfPoolTimeout(1000)
                 .build();
 
-        FastPool<byte[]> stringPool = poolFactory.getFastPool(() -> new byte[256]);
-        Pool<byte[]> binaryPool = poolFactory.getPool(() -> new byte[4096]);
-        FastPool<ReaderContext> readerContextPool = poolFactory.getFastPool(ReaderContext::new);
-        FastPool<ArrayDeque<ReaderContext>> stackPool = poolFactory.getFastPool(() -> new ArrayDeque<>(64));
+        Pool<ReaderContext> readerContextPool = poolFactory.getPool(ReaderContext::new);
+        Pool<ArrayDeque<ReaderContext>> stackPool = poolFactory.getPool(() -> new ArrayDeque<>(64));
         Pool<WriterContext> writerContextPool = poolFactory.getPool(WriterContext::new);
         bufferPool = poolFactory.getDisposablePool(() -> new DynamicByteBuffer(256 * 1024, true));
 
         messagePackWriter = new MessagePackWriter(bufferPool, writerContextPool);
-        messagePackReader = new MessagePackReader(stringPool, readerContextPool, stackPool, false, false);
+        messagePackReader = new MessagePackReader(readerContextPool, stackPool, false, false);
 
         // Create document with 128KB binary payload
         byte[] largePayload = new byte[128 * 1024];
@@ -66,12 +62,12 @@ public class MessagePackBenchmark {
             largePayload[i] = (byte) (i % 128);
         }
 
-        Map<String, Object> payload128kb = new HashMap<>();
-        payload128kb.put("command", "FORWARD_PACKET");
-        payload128kb.put("sessionId", 12345L);
-        payload128kb.put("timestamp", System.currentTimeMillis());
-        payload128kb.put("payload", largePayload);
-        document128kb = new Document(payload128kb);
+        Map<Integer, Object> payload128kb = new HashMap<>();
+        payload128kb.put(0, "FORWARD_PACKET");
+        payload128kb.put(1, 12345L);
+        payload128kb.put(2, System.currentTimeMillis());
+        payload128kb.put(3, largePayload);
+        document128kb = new BinaryDocument(payload128kb);
 
         // Pre-serialize for deserialization benchmark
         DynamicByteBuffer buffer = messagePackWriter.serialize(document128kb);
@@ -83,17 +79,17 @@ public class MessagePackBenchmark {
         bufferPool.release(buffer);
 
         // Setup many fields benchmark - 1000 nested objects
-        Map<String, Object> fields = new HashMap<>();
+        Map<Integer, Object> fields = new HashMap<>();
         for (int i = 0; i < 1000; i++) {
-            Map<String, Object> nested = new HashMap<>();
-            nested.put("id", i);
-            nested.put("name", "item_" + i);
-            nested.put("active", i % 2 == 0);
-            nested.put("score", i * 1.5);
-            nested.put("tags", List.of("tag1", "tag2", "tag3"));
-            fields.put("field_" + i, nested);
+            Map<Integer, Object> nested = new HashMap<>();
+            nested.put(0, i);
+            nested.put(1, "item_" + i);
+            nested.put(2, i % 2 == 0);
+            nested.put(3, i * 1.5);
+            nested.put(4, List.of("tag1", "tag2", "tag3"));
+            fields.put(i, nested);
         }
-        manyFieldsDocument = new Document(fields);
+        manyFieldsDocument = new BinaryDocument(fields);
 
         // Pre-serialize many fields for deserialization benchmark
         DynamicByteBuffer manyFieldsBuffer = messagePackWriter.serialize(manyFieldsDocument);
@@ -105,12 +101,12 @@ public class MessagePackBenchmark {
         bufferPool.release(manyFieldsBuffer);
 
         // Setup simple document benchmark
-        Map<String, Object> simple = new HashMap<>();
-        simple.put("id", 42);
-        simple.put("name", "test");
-        simple.put("active", true);
-        simple.put("score", 3.14159);
-        simpleDocument = new Document(simple);
+        Map<Integer, Object> simple = new HashMap<>();
+        simple.put(0, 42);
+        simple.put(1, "test");
+        simple.put(2, true);
+        simple.put(3, 3.14159);
+        simpleDocument = new BinaryDocument(simple);
 
         DynamicByteBuffer simpleBuffer = messagePackWriter.serialize(simpleDocument);
         simpleBuffer.flip();
@@ -133,16 +129,16 @@ public class MessagePackBenchmark {
     }
 
     @Benchmark
-    public Document deserialize128kb() {
+    public BinaryDocument deserialize128kb() {
         serialized128kb.rewind();
         return messagePackReader.deserialize(serialized128kb);
     }
 
     @Benchmark
-    public Document roundtrip128kb() {
+    public BinaryDocument roundtrip128kb() {
         DynamicByteBuffer buffer = messagePackWriter.serialize(document128kb);
         buffer.flip();
-        Document result = messagePackReader.deserialize(buffer.getBuffer());
+        BinaryDocument result = messagePackReader.deserialize(buffer.getBuffer());
         buffer.dispose();
         bufferPool.release(buffer);
         return result;
@@ -160,16 +156,16 @@ public class MessagePackBenchmark {
     }
 
     @Benchmark
-    public Document deserializeManyFields() {
+    public BinaryDocument deserializeManyFields() {
         manyFieldsSerialized.rewind();
         return messagePackReader.deserialize(manyFieldsSerialized);
     }
 
     @Benchmark
-    public Document roundtripManyFields() {
+    public BinaryDocument roundtripManyFields() {
         DynamicByteBuffer buffer = messagePackWriter.serialize(manyFieldsDocument);
         buffer.flip();
-        Document result = messagePackReader.deserialize(buffer.getBuffer());
+        BinaryDocument result = messagePackReader.deserialize(buffer.getBuffer());
         buffer.dispose();
         bufferPool.release(buffer);
         return result;
@@ -187,16 +183,16 @@ public class MessagePackBenchmark {
     }
 
     @Benchmark
-    public Document deserializeSimple() {
+    public BinaryDocument deserializeSimple() {
         simpleSerialized.rewind();
         return messagePackReader.deserialize(simpleSerialized);
     }
 
     @Benchmark
-    public Document roundtripSimple() {
+    public BinaryDocument roundtripSimple() {
         DynamicByteBuffer buffer = messagePackWriter.serialize(simpleDocument);
         buffer.flip();
-        Document result = messagePackReader.deserialize(buffer.getBuffer());
+        BinaryDocument result = messagePackReader.deserialize(buffer.getBuffer());
         buffer.dispose();
         bufferPool.release(buffer);
         return result;

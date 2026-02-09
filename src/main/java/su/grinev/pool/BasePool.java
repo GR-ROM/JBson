@@ -5,12 +5,14 @@ import lombok.Getter;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.LockSupport;
 
 public abstract class BasePool<T> {
     protected final AtomicInteger counter = new AtomicInteger(0);
     @Getter
     protected final AtomicInteger currentPoolSize;
     protected final ConcurrentLinkedDeque<T> pool;
+    protected final ConcurrentLinkedDeque<Thread> waiters;
     protected int limit;
     protected int initalSize;
     protected final AtomicBoolean isWaiting;
@@ -27,49 +29,57 @@ public abstract class BasePool<T> {
         this.isWaiting = new AtomicBoolean(false);
         this.timeoutMs = timeoutMs;
         this.blocking = blocking;
+        this.waiters = new ConcurrentLinkedDeque<>();
     }
 
     protected abstract T supply();
 
     public T get() {
-        synchronized (pool) {
-            if (counter.get() >= limit) {
-                if (blocking) {
-                    while (counter.get() >= limit) {
-                        try {
-                            isWaiting.set(true);
-                            if (timeoutMs > 0) {
-                                pool.wait(timeoutMs);
-                                if (counter.get() >= limit) {
-                                    throw new RuntimeException("Pool is full");
-                                }
-                            } else {
-                                pool.wait();
-                            }
-                        } catch (InterruptedException e) {
-                            Thread.currentThread().interrupt();
-                            throw new RuntimeException(e);
-                        }
-                    }
-                } else {
-                    throw new RuntimeException("Pool is full");
-                }
+        int spins = 3;
+
+        while (true) {
+            int cur = counter.get();
+            if (cur < limit && counter.compareAndSet(cur, cur + 1)) {
+                T obj = pool.pollLast();
+                return obj != null ? obj : supply();
             }
-            counter.incrementAndGet();
-            if (pool.isEmpty()) {
-                pool.add(supply());
+
+            if (!blocking) {
+                throw new IllegalStateException("Pool overflow");
             }
-            return pool.removeLast();
+
+            if (--spins > 0) {
+                Thread.onSpinWait();
+                continue;
+            }
+
+            Thread me = Thread.currentThread();
+            waiters.add(me);
+
+            cur = counter.get();
+            if (cur < limit && counter.compareAndSet(cur, cur + 1)) {
+                waiters.remove(me);
+                T obj = pool.pollLast();
+                return obj != null ? obj : supply();
+            }
+
+            LockSupport.park(this);
+            spins = 3;
         }
     }
 
     public void release(T t) {
-        synchronized (pool) {
-            pool.addLast(t);
-            counter.decrementAndGet();
-            if (isWaiting.compareAndSet(true, false)) {
-                pool.notifyAll();
-            }
+        pool.addLast(t);
+
+        int c = counter.decrementAndGet();
+        if (c < 0) {
+            counter.incrementAndGet();
+           // throw new IllegalStateException("Double release");
+        }
+
+        Thread w = waiters.poll();
+        if (w != null) {
+            LockSupport.unpark(w);
         }
     }
 }

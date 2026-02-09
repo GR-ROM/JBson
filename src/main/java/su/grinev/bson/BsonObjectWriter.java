@@ -1,5 +1,6 @@
 package su.grinev.bson;
 
+import su.grinev.BinaryDocument;
 import su.grinev.pool.DisposablePool;
 import su.grinev.pool.DynamicByteBuffer;
 import su.grinev.pool.Pool;
@@ -34,7 +35,7 @@ public class BsonObjectWriter {
     private final DisposablePool<DynamicByteBuffer> dynamicByteBufferPool;
     private final Pool<byte[]> bufferPool;
     private final Pool<ArrayDeque<WriterContext>> stackPool;
-    private final Map<String, byte[]> keyBytesCache = new ConcurrentHashMap<>();
+    private final Map<Object, byte[]> keyBytesCache = new ConcurrentHashMap<>();
 
     public BsonObjectWriter(
             PoolFactory poolFactory,
@@ -48,13 +49,14 @@ public class BsonObjectWriter {
     }
 
     private byte[] getKeyBytes(String key) {
-        return keyBytesCache.computeIfAbsent(key, k -> k.getBytes(StandardCharsets.UTF_8));
+        return keyBytesCache.computeIfAbsent(key, k -> ((String)k).getBytes(StandardCharsets.UTF_8));
     }
+
     static byte[] getIndexBytes(int index) {
         return index < INDEX_BYTES.length ? INDEX_BYTES[index] : Integer.toString(index).getBytes(StandardCharsets.UTF_8);
     }
 
-    public DynamicByteBuffer serialize(Document document) {
+    public DynamicByteBuffer serialize(BinaryDocument document) {
         DynamicByteBuffer buffer = dynamicByteBufferPool.get();
         buffer.initBuffer();
         ArrayDeque<WriterContext> stack = stackPool.get();
@@ -89,12 +91,11 @@ public class BsonObjectWriter {
                     byte[] indexBytes = getIndexBytes(index);
                     writeValueWithArrayKey(buffer, stack, value, indexBytes);
                 } else {
-                    Map.Entry<String, Object> entry = ctx.mapIterator.next();
-                    String key = entry.getKey();
+                    Map.Entry<Integer, Object> entry = ctx.mapIterator.next();
+                    String key = entry.getKey().toString();
                     Object value = entry.getValue();
                     if (value == null) value = WriterContext.NullObject.INSTANCE;
-                    byte[] keyBytes = getKeyBytes(key);
-                    writeValue(buffer, stack, value, keyBytes);
+                    writeValue(buffer, stack, value, getKeyBytes(key));
                 }
             }
 
@@ -289,7 +290,7 @@ public class BsonObjectWriter {
         }
     }
 
-    public void serialize(Document document, OutputStream outputStream) throws IOException {
+    public void serialize(BinaryDocument document, OutputStream outputStream) throws IOException {
         try (DynamicByteBuffer dynamicByteBuffer = serialize(document)) {
             dynamicByteBuffer.flip();
             byte[] buf = bufferPool.get();

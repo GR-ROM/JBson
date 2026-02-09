@@ -3,6 +3,7 @@ package su.grinev.bson;
 import lombok.extern.slf4j.Slf4j;
 import su.grinev.exception.BsonException;
 import su.grinev.pool.FastPool;
+import su.grinev.pool.Pool;
 
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
@@ -13,17 +14,14 @@ import static su.grinev.bson.Utility.decodeDecimal128;
 
 @Slf4j
 public class BsonByteBufferReader implements BsonReader {
+
     private static final int STRING_BUFFER_SIZE = 256;
-
-    // Thread-local string buffer - avoids pool overhead for every string read
     private static final ThreadLocal<byte[]> stringBuffer = ThreadLocal.withInitial(() -> new byte[STRING_BUFFER_SIZE]);
-
     private final ByteBuffer buffer;
-    private final FastPool<ByteBuffer> byteBufferPool;
+    private final Pool<ByteBuffer> byteBufferPool;
 
-    public BsonByteBufferReader(ByteBuffer buffer, FastPool<byte[]> bufferPool, FastPool<ByteBuffer> binaryPacketPool) {
+    public BsonByteBufferReader(ByteBuffer buffer, Pool<ByteBuffer> binaryPacketPool) {
         this.buffer = buffer;
-        // bufferPool kept for API compatibility but not used
         this.byteBufferPool = binaryPacketPool;
     }
 

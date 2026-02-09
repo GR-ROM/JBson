@@ -1,6 +1,7 @@
 package su.grinev.test;
 
 import annotation.BsonType;
+import annotation.Tag;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -14,11 +15,15 @@ import java.time.Instant;
 @AllArgsConstructor
 public class VpnRequestDto<T> {
 
+    @Tag(2)
     private String protocolVersion;
+    @Tag(0)
     private Command command;
+    @Tag(3)
     private Instant timestamp;
 
-    @BsonType(discriminator = "_dataType")
+    @Tag(1)
+    @BsonType(discriminator = 1488)
     private T data;
 
     public static <T> VpnRequestDto<T> wrap(Command command, T data) {

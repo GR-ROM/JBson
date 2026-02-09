@@ -1,13 +1,10 @@
 package su.grinev.json;
 
-import su.grinev.bson.Document;
+import su.grinev.Document;
 import su.grinev.pool.DisposablePool;
 import su.grinev.pool.DynamicByteBuffer;
 
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayDeque;
-import java.util.Deque;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 

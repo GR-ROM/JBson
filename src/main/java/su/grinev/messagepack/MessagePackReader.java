@@ -1,62 +1,70 @@
 package su.grinev.messagepack;
 
-import su.grinev.bson.Document;
-import su.grinev.pool.FastPool;
+import su.grinev.BinaryDocument;
+import su.grinev.pool.DynamicByteBuffer;
+import su.grinev.pool.Pool;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 public class MessagePackReader {
 
     private static final int STRING_BUFFER_SIZE = 256;
-
-    private final FastPool<ReaderContext> contextPool;
-    private final FastPool<ArrayDeque<ReaderContext>> stackPool;
+    private static final String KEY_MODE = "INT";
+    private final Pool<ReaderContext> contextPool;
+    private final Pool<ArrayDeque<ReaderContext>> stackPool;
     private final boolean useProjectionsForByteBuffer;
     private final boolean useByteBufferForBinary;
-
-    // Thread-local string buffer - avoids pool overhead for every string read
     private final ThreadLocal<byte[]> stringBuffer = ThreadLocal.withInitial(() -> new byte[STRING_BUFFER_SIZE]);
 
-    public MessagePackReader(FastPool<byte[]> stringBufferPool,
-                             FastPool<ReaderContext> contextPool,
-                             FastPool<ArrayDeque<ReaderContext>> stackPool,
-                             boolean useProjectionsForByteBuffer,
-                             boolean useByteBufferForBinary) {
-        // stringBufferPool is kept for API compatibility but not used
+    public MessagePackReader(
+            Pool<ReaderContext> contextPool,
+            Pool<ArrayDeque<ReaderContext>> stackPool,
+            boolean useProjectionsForByteBuffer,
+            boolean useByteBufferForBinary) {
         this.contextPool = contextPool;
         this.stackPool = stackPool;
         this.useProjectionsForByteBuffer = useProjectionsForByteBuffer;
         this.useByteBufferForBinary = useByteBufferForBinary;
     }
 
-    public Document deserialize(ByteBuffer buffer) {
-        Map<String, Object> root = new HashMap<>();
+    public BinaryDocument deserialize(ByteBuffer buffer) {
+        Map<Integer, Object> root = new HashMap<>();
         ArrayDeque<ReaderContext> stack = stackPool.get();
 
         try {
             int rootSize = getMapSize(buffer);
-            stack.addFirst(contextPool.get().init(root, rootSize));
+            stack.addFirst(contextPool.get().initMap(root, rootSize));
 
             outer:
             while (!stack.isEmpty()) {
                 ReaderContext current = stack.getFirst();
                 int stackSize = stack.size();
-                Map<String, Object> map = current.objectMap;
 
-                while (current.index < current.size) {
-                    current.index++;
-                    String key = readKeyString(buffer);
-                    Object value = readValue(buffer, stack);
-                    map.put(key, value);
+                if (!current.isArray) {
+                    Map<Integer, Object> map = current.objectMap;
+                    while (current.index < current.size) {
+                        current.index++;
+                        //String key = readKeyString(buffer);
+                        int key = readInt(buffer);
 
-                    if (stack.size() > stackSize) {
-                        continue outer;
+                        Object value = readValue(buffer, stack);
+                        map.put(key, value);
+
+                        if (stack.size() > stackSize) {
+                            continue outer;
+                        }
+                    }
+                } else {List<Object> list = current.objectList;
+                    while (current.index < current.size) {
+                        current.index++;
+                        Object value = readValue(buffer, stack);
+                        list.add(value);
+
+                        if (stack.size() > stackSize) {
+                            continue outer;
+                        }
                     }
                 }
 
@@ -64,45 +72,11 @@ public class MessagePackReader {
                 current.reset();
                 contextPool.release(current);
             }
-            return new Document(root);
+            return new BinaryDocument(root);
         } finally {
             stack.clear();
             stackPool.release(stack);
         }
-    }
-
-    // Specialized key reader - keys are always strings, skip full type dispatch
-    private String readKeyString(ByteBuffer buffer) {
-        byte b = buffer.get();
-        int unsigned = b & 0xFF;
-
-        // Keys are almost always fixstr (short strings)
-        if (unsigned >= 0xA0 && unsigned <= 0xBF) {
-            int len = unsigned & 0x1F;
-            byte[] strBuf = stringBuffer.get();
-            if (strBuf.length < len) {
-                strBuf = new byte[Math.max(len, STRING_BUFFER_SIZE * 2)];
-                stringBuffer.set(strBuf);
-            }
-            buffer.get(strBuf, 0, len);
-            return new String(strBuf, 0, len, StandardCharsets.UTF_8);
-        }
-
-        // Less common: longer strings
-        int len = switch (unsigned) {
-            case 0xD9 -> buffer.get() & 0xFF;    // STR8
-            case 0xDA -> buffer.getShort() & 0xFFFF; // STR16
-            case 0xDB -> buffer.getInt(); // STR32
-            default -> throw new MessagePackException("Expected string key, got 0x" + Integer.toHexString(unsigned));
-        };
-
-        byte[] strBuf = stringBuffer.get();
-        if (strBuf.length < len) {
-            strBuf = new byte[len];
-            stringBuffer.set(strBuf);
-        }
-        buffer.get(strBuf, 0, len);
-        return new String(strBuf, 0, len, StandardCharsets.UTF_8);
     }
 
     private Object readValue(ByteBuffer buffer, ArrayDeque<ReaderContext> stack) {
@@ -129,10 +103,10 @@ public class MessagePackReader {
         }
 
         if (unsigned >= 0x80 && unsigned <= 0x8F) {
-            // Fixmap: 0x80-0x8F - inline map creation
+            // Fixmap: 0x80-0x8F - push to stack
             int size = unsigned & 0x0F;
-            Map<String, Object> map = new HashMap<>(size + size / 3 + 1);
-            stack.addFirst(contextPool.get().init(map, size));
+            Map<Integer, Object> map = new HashMap<>(size + size / 3 + 1);
+            stack.addFirst(contextPool.get().initMap(map, size));
             return map;
         }
 
@@ -142,11 +116,11 @@ public class MessagePackReader {
         }
 
         if (unsigned >= 0x90 && unsigned <= 0x9F) {
-            // Fixarray: 0x90-0x9F
+            // Fixarray: 0x90-0x9F - push to stack
             int size = unsigned & 0x0F;
             List<Object> list = new ArrayList<>(size);
-            for (int i = 0; i < size; i++) {
-                list.add(readValue(buffer, stack));
+            if (size > 0) {
+                stack.addFirst(contextPool.get().initArray(list, size));
             }
             return list;
         }
@@ -189,16 +163,18 @@ public class MessagePackReader {
         };
     }
 
-    private Map<String, Object> readMap(ArrayDeque<ReaderContext> stack, int size) {
-        Map<String, Object> map = new HashMap<>(size + size / 3 + 1);
-        stack.addFirst(contextPool.get().init(map, size));
+    private Map<Integer, Object> readMap(ArrayDeque<ReaderContext> stack, int size) {
+        Map<Integer, Object> map = new HashMap<>(size + size / 3 + 1);
+        if (size > 0) {
+            stack.addFirst(contextPool.get().initMap(map, size));
+        }
         return map;
     }
 
     private List<Object> readArray(ByteBuffer buffer, ArrayDeque<ReaderContext> stack, int size) {
         List<Object> list = new ArrayList<>(size);
-        for (int i = 0; i < size; i++) {
-            list.add(readValue(buffer, stack));
+        if (size > 0) {
+            stack.addFirst(contextPool.get().initArray(list, size));
         }
         return list;
     }
@@ -255,4 +231,33 @@ public class MessagePackReader {
         }
         throw new MessagePackException("Unexpected type 0x" + Integer.toHexString(unsigned));
     }
+
+    private int readInt(ByteBuffer buffer) {
+        int b = buffer.get() & 0xFF;
+        // positive fixint (0xxxxxxx)
+        if ((b & 0x80) == 0) {
+            return b;
+        }
+        // negative fixint (111xxxxx)
+        if ((b & 0xE0) == 0xE0) {
+            return (byte) b;
+        }
+        return switch (b) {
+            case 0xD0 -> buffer.get();
+            case 0xD1 -> buffer.getShort();
+            case 0xD2 -> buffer.getInt();
+            case 0xD3 -> {
+                long v = buffer.getLong();
+                if (v < Integer.MIN_VALUE || v > Integer.MAX_VALUE) {
+                    throw new MessagePackException(
+                            "int64 overflow: " + v
+                    );
+                }
+                yield (int) v;
+            }
+
+            default -> throw new MessagePackException("Unknown byte 0x" + Integer.toHexString(b));
+        };
+    }
+
 }

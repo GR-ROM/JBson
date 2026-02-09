@@ -2,6 +2,7 @@ plugins {
     id 'java'
     id 'java-library'
     id 'maven-publish'
+    id 'com.google.protobuf' version '0.9.4'
 }
 
 group = "su.grinev"
@@ -54,6 +55,22 @@ dependencies {
     // JMH for benchmarking
     testImplementation 'org.openjdk.jmh:jmh-core:1.37'
     testAnnotationProcessor 'org.openjdk.jmh:jmh-generator-annprocess:1.37'
+
+    // Protobuf
+    testImplementation 'com.google.protobuf:protobuf-java:3.25.1'
+}
+
+protobuf {
+    protoc {
+        artifact = 'com.google.protobuf:protoc:3.25.1'
+    }
+    generateProtoTasks {
+        all().each { task ->
+            task.builtins {
+                java {}
+            }
+        }
+    }
 }
 
 java {

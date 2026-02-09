@@ -1,4 +1,4 @@
-package su.grinev.bson;
+package su.grinev;
 
 import lombok.Getter;
 

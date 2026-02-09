@@ -3,9 +3,7 @@ package su.grinev;
 import lombok.Getter;
 import su.grinev.bson.BsonObjectReader;
 import su.grinev.bson.BsonObjectWriter;
-import su.grinev.bson.Document;
 import su.grinev.pool.DynamicByteBuffer;
-import su.grinev.pool.Pool;
 import su.grinev.pool.PoolFactory;
 
 import java.io.IOException;
@@ -25,26 +23,26 @@ public class BsonMapper {
     public BsonMapper(PoolFactory poolFactory, int documentSize, int initialCStringSize, Supplier<ByteBuffer> byteBufferAllocator) {
         this.poolFactory = poolFactory;
         this.bsonObjectWriter = new BsonObjectWriter(poolFactory, documentSize, true);
-        this.bsonObjectReader = new BsonObjectReader(poolFactory, documentSize, initialCStringSize, true, byteBufferAllocator);
+        this.bsonObjectReader = new BsonObjectReader(poolFactory, documentSize, true, byteBufferAllocator);
     }
 
     public DynamicByteBuffer serialize(Object o) {
-        Document document = writerBinder.unbind(o);
+        BinaryDocument document = writerBinder.unbind(o);
         return bsonObjectWriter.serialize(document);
     }
 
     public void serialize(Object o, OutputStream outputStream) throws IOException {
-        Document document = writerBinder.unbind(o);
+        BinaryDocument document = writerBinder.unbind(o);
         bsonObjectWriter.serialize(document, outputStream);
     }
 
     public <T> T deserialize(ByteBuffer buffer, Class<T> tClass) {
-        Document document = bsonObjectReader.deserialize(buffer);
+        BinaryDocument document = bsonObjectReader.deserialize(buffer);
         return readerBinder.bind(tClass, document);
     }
 
     public <T> T deserialize(InputStream inputStream, Class<T> tClass) throws IOException {
-        Document document = bsonObjectReader.deserialize(inputStream);
+        BinaryDocument document = bsonObjectReader.deserialize(inputStream);
         return readerBinder.bind(tClass, document);
     }
 }

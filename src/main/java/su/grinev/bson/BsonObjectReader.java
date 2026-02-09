@@ -2,8 +2,8 @@ package su.grinev.bson;
 
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
+import su.grinev.BinaryDocument;
 import su.grinev.exception.BsonException;
-import su.grinev.pool.FastPool;
 import su.grinev.pool.Pool;
 import su.grinev.pool.PoolFactory;
 
@@ -17,11 +17,10 @@ import java.util.function.Supplier;
 
 @Slf4j
 public class BsonObjectReader {
-    private final FastPool<ReaderContext> contextPool;
-    private final FastPool<byte[]> stringPool;
+    private final Pool<ReaderContext> contextPool;
     private final Pool<byte[]> packetPool;
-    private final FastPool<ArrayDeque<ReaderContext>> stackPool;
-    private FastPool<ByteBuffer> binaryPacketPool;
+    private final Pool<ArrayDeque<ReaderContext>> stackPool;
+    private Pool<ByteBuffer> binaryPacketPool;
     private final int documentSizeLimit;
     @Setter
     private boolean readBinaryAsByteArray = true;
@@ -31,26 +30,24 @@ public class BsonObjectReader {
     public BsonObjectReader(
             PoolFactory poolFactory,
             int documentSizeLimit,
-            int initialCStringSize,
             boolean enableBufferProjection,
             Supplier<ByteBuffer> byteBufferAllocator
     ) {
         this.documentSizeLimit = documentSizeLimit;
         this.enableBufferProjection = enableBufferProjection;
-        contextPool = poolFactory.getFastPool("bson-reader-context-pool", ReaderContext::new);
-        stringPool = poolFactory.getFastPool("bson-reader-string-pool", () -> new byte[initialCStringSize]);
+        contextPool = poolFactory.getPool("bson-reader-context-pool", ReaderContext::new);
         packetPool = poolFactory.getPool("bson-reader-input-steam-pool", () -> new byte[documentSizeLimit]);
-        stackPool = poolFactory.getFastPool("bson-reader-stack-pool", () -> new ArrayDeque<>(64));
+        stackPool = poolFactory.getPool("bson-reader-stack-pool", () -> new ArrayDeque<>(64));
         if (!enableBufferProjection) {
-            binaryPacketPool = poolFactory.getFastPool("bson-reader-packet-pool", byteBufferAllocator);
+            binaryPacketPool = poolFactory.getPool("bson-reader-packet-pool", byteBufferAllocator);
         }
     }
 
-    public Document deserialize(ByteBuffer buffer) {
+    public BinaryDocument deserialize(ByteBuffer buffer) {
         buffer.order(ByteOrder.LITTLE_ENDIAN);
 
-        Map<String, Object> rootDocument = new HashMap<>();
-        BsonReader bsonReader = new BsonByteBufferReader(buffer, stringPool, binaryPacketPool);
+        Map<Integer, Object> rootDocument = new HashMap<>();
+        BsonReader bsonReader = new BsonByteBufferReader(buffer, binaryPacketPool);
         ArrayDeque<ReaderContext> stack = stackPool.get();
 
         try {
@@ -74,7 +71,7 @@ public class BsonObjectReader {
                         if (type == 0) {
                             break;
                         }
-                        String key = bsonReader.readCString();
+                        Integer key = Integer.parseInt(bsonReader.readCString());
                         Object value = doReadValue(bsonReader, ctx, stack, type);
                         map.put(key, value);
 
@@ -105,14 +102,14 @@ public class BsonObjectReader {
                 }
             }
 
-            return new Document(rootDocument);
+            return new BinaryDocument(rootDocument);
         } finally {
             stack.clear();
             stackPool.release(stack);
         }
     }
 
-    public Document deserialize(InputStream inputStream) throws IOException {
+    public BinaryDocument deserialize(InputStream inputStream) throws IOException {
         byte[] lengthBytes = inputStream.readNBytes(4);
         if (lengthBytes.length != 4) {
             throw new IOException("Unable to read document length");

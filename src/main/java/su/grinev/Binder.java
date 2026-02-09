@@ -1,9 +1,13 @@
 package su.grinev;
 
 import annotation.BsonType;
-import su.grinev.bson.Document;
+import annotation.Tag;
+import annotation.Transient;
 
-import java.lang.reflect.Constructor;
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
+import java.lang.invoke.VarHandle;
 import java.lang.reflect.Field;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
@@ -13,15 +17,46 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Collectors;
 
 public class Binder {
 
-    private static final Map<Class<?>, Map<String, Field>> fieldCache = new ConcurrentHashMap<>();
+    enum FieldKind { PRIMITIVE, ENUM, COLLECTION, MAP, BSON_TYPE, NESTED }
 
-    public <T> T bind(Class<T> tClass, Document document) {
+    static final class FieldBinding {
+        final int tag;
+        final VarHandle handle;
+        final FieldKind kind;
+        final Class<?> fieldType;
+        final Type genericType;
+        final int bsonDiscriminator; // -1 if not BSON_TYPE
+
+        FieldBinding(int tag, VarHandle handle, FieldKind kind, Class<?> fieldType, Type genericType, int bsonDiscriminator) {
+            this.tag = tag;
+            this.handle = handle;
+            this.kind = kind;
+            this.fieldType = fieldType;
+            this.genericType = genericType;
+            this.bsonDiscriminator = bsonDiscriminator;
+        }
+    }
+
+    static final class ClassSchema {
+        final FieldBinding[] bindings;   // for iteration in unbind()
+        final FieldBinding[] tagLookup;  // tag-indexed array for O(1) lookup in bind()
+
+        ClassSchema(FieldBinding[] bindings, FieldBinding[] tagLookup) {
+            this.bindings = bindings;
+            this.tagLookup = tagLookup;
+        }
+    }
+
+    private static final Map<Class<?>, ClassSchema> schemaCache = new ConcurrentHashMap<>();
+    private static final Map<Class<?>, MethodHandle> ctorCache = new ConcurrentHashMap<>();
+
+    @SuppressWarnings("unchecked")
+    public <T> T bind(Class<T> tClass, BinaryDocument document) {
         Object rootObject = instantiate(tClass);
-        Deque<BinderContext> stack = new LinkedList<>();
+        ArrayDeque<BinderContext> stack = new ArrayDeque<>();
         stack.addLast(new BinderContext(rootObject, document.getDocumentMap(), tClass));
 
         while (!stack.isEmpty()) {
@@ -47,44 +82,51 @@ public class Binder {
                 continue;
             }
 
-            Map<String, Field> fieldsMap = collectFields(ctx.o.getClass());
-            Map<String, Object> documentMap = (Map<String, Object>) ctx.document;
+            ClassSchema schema = getSchema(ctx.o.getClass());
+            Map<Integer, Object> documentMap = (Map<Integer, Object>) ctx.document;
+            FieldBinding[] tagLookup = schema.tagLookup;
 
-            for (Map.Entry<String, Object> entry : documentMap.entrySet()) {
-                Field field = fieldsMap.get(entry.getKey());
-                if (field == null) continue;
+            for (Map.Entry<Integer, Object> entry : documentMap.entrySet()) {
+                int key = entry.getKey();
+                if (key < 0 || key >= tagLookup.length) continue;
+                FieldBinding binding = tagLookup[key];
+                if (binding == null) continue;
 
                 Object value = entry.getValue();
 
                 try {
-                    if (isPrimitiveOrWrapperOrString(field.getType())) {
-                        field.set(ctx.o, value);
-                    } else if (field.getType().isEnum()) {
-                        Enum<?> enumValue = Enum.valueOf((Class<Enum>) field.getType(), value.toString());
-                        field.set(ctx.o, enumValue);
-                    } else if (Collection.class.isAssignableFrom(field.getType())) {
-                        Collection<Object> target = instantiateCollection(field.getType());
-                        field.set(ctx.o, target);
-                        stack.addLast(new BinderContext(target, value, field.getGenericType()));
-                    } else if (Map.class.isAssignableFrom(field.getType())) {
-                        Map<Object, Object> targetMap = new HashMap<>();
-                        field.set(ctx.o, targetMap);
-                        stack.addLast(new BinderContext(targetMap, value, field.getGenericType()));
-                    } else if (field.isAnnotationPresent(BsonType.class)) {
-                        String discriminatorField = field.getAnnotation(BsonType.class).discriminator();
-                        String className = (String) documentMap.get(discriminatorField);
-                        Class<?> targetCls = Class.forName(className);
-                        Object newObject = instantiate(targetCls);
-                        field.set(ctx.o, newObject);
-                        stack.addLast(new BinderContext(newObject, value, targetCls));
-                    } else {
-                        Class<?> targetCls = field.getType();
-                        Object newObject = instantiate(targetCls);
-                        field.set(ctx.o, newObject);
-                        stack.addLast(new BinderContext(newObject, value, targetCls));
+                    switch (binding.kind) {
+                        case PRIMITIVE -> binding.handle.set(ctx.o, coerceNumeric(binding.fieldType, value));
+                        case ENUM -> {
+                            Enum<?> enumValue = Enum.valueOf((Class<Enum>) binding.fieldType, value.toString());
+                            binding.handle.set(ctx.o, enumValue);
+                        }
+                        case COLLECTION -> {
+                            Collection<Object> target = instantiateCollection(binding.fieldType);
+                            binding.handle.set(ctx.o, target);
+                            stack.addLast(new BinderContext(target, value, binding.genericType));
+                        }
+                        case MAP -> {
+                            Map<Object, Object> targetMap = new HashMap<>();
+                            binding.handle.set(ctx.o, targetMap);
+                            stack.addLast(new BinderContext(targetMap, value, binding.genericType));
+                        }
+                        case BSON_TYPE -> {
+                            String className = (String) documentMap.get(binding.bsonDiscriminator);
+                            Class<?> targetCls = Class.forName(className);
+                            Object newObject = instantiate(targetCls);
+                            binding.handle.set(ctx.o, newObject);
+                            stack.addLast(new BinderContext(newObject, value, targetCls));
+                        }
+                        case NESTED -> {
+                            Class<?> targetCls = binding.fieldType;
+                            Object newObject = instantiate(targetCls);
+                            binding.handle.set(ctx.o, newObject);
+                            stack.addLast(new BinderContext(newObject, value, targetCls));
+                        }
                     }
                 } catch (Exception e) {
-                    throw new RuntimeException("Failed to bind field: " + field.getName(), e);
+                    throw new RuntimeException("Failed to bind tag: " + key, e);
                 }
             }
         }
@@ -92,70 +134,81 @@ public class Binder {
         return (T) rootObject;
     }
 
-    public Document unbind(Object o) {
-        Map<String, Object> rootDocument = new HashMap<>();
-        Deque<BinderContext> stack = new LinkedList<>();
+    public BinaryDocument unbind(Object o) {
+        Map<Integer, Object> rootDocument = new HashMap<>();
+        ArrayDeque<BinderContext> stack = new ArrayDeque<>();
         stack.addLast(new BinderContext(o, rootDocument, o.getClass()));
 
         while (!stack.isEmpty()) {
             BinderContext ctx = stack.removeLast();
-            Map<String, Object> currentDocument = (Map<String, Object>) ctx.document;
-            Map<String, Field> fieldMap = collectFields(ctx.o.getClass());
+            Map<Integer, Object> currentDocument = (Map<Integer, Object>) ctx.document;
+            ClassSchema schema = getSchema(ctx.o.getClass());
 
             try {
-                for (Map.Entry<String, Field> fieldEntry : fieldMap.entrySet()) {
-                    String name = fieldEntry.getKey();
-                    Field field = fieldEntry.getValue();
-                    Object fieldValue = field.get(ctx.o);
+                for (FieldBinding binding : schema.bindings) {
+                    Object fieldValue = binding.handle.get(ctx.o);
                     if (fieldValue == null) continue;
 
-                    if (isPrimitiveOrWrapperOrString(field.getType())) {
-                        currentDocument.put(name, fieldValue);
-                    } else if (field.getType().isEnum()) {
-                        currentDocument.put(name, fieldValue.toString());
-                    } else if (field.isAnnotationPresent(BsonType.class)) {
-                        Map<String, Object> nested = new LinkedHashMap<>();
-                        String discriminator = field.getAnnotation(BsonType.class).discriminator();
-                        currentDocument.put(discriminator, fieldValue.getClass().getName());
-                        currentDocument.put(name, nested);
-                        stack.addLast(new BinderContext(fieldValue, nested, fieldValue.getClass()));
-                    } else if (Collection.class.isAssignableFrom(field.getType())) {
-                        List<Object> serialized = new ArrayList<>();
-                        currentDocument.put(name, serialized);
-                        for (Object item : (Collection<?>) fieldValue) {
-                            if (isPrimitiveOrWrapperOrString(item.getClass()) || item.getClass().isEnum()) {
-                                serialized.add(item.toString());
-                            } else {
-                                Map<String, Object> nested = new LinkedHashMap<>();
-                                serialized.add(nested);
-                                stack.addLast(new BinderContext(item, nested, item.getClass()));
+                    int tag = binding.tag;
+                    switch (binding.kind) {
+                        case PRIMITIVE -> currentDocument.put(tag, fieldValue);
+                        case ENUM -> currentDocument.put(tag, fieldValue.toString());
+                        case BSON_TYPE -> {
+                            Map<Integer, Object> nested = new LinkedHashMap<>();
+                            currentDocument.put(binding.bsonDiscriminator, fieldValue.getClass().getName());
+                            currentDocument.put(tag, nested);
+                            stack.addLast(new BinderContext(fieldValue, nested, fieldValue.getClass()));
+                        }
+                        case COLLECTION -> {
+                            List<Object> serialized = new ArrayList<>();
+                            currentDocument.put(tag, serialized);
+                            for (Object item : (Collection<?>) fieldValue) {
+                                if (isPrimitiveOrWrapperOrString(item.getClass()) || item.getClass().isEnum()) {
+                                    serialized.add(item.toString());
+                                } else {
+                                    Map<Integer, Object> nested = new LinkedHashMap<>();
+                                    serialized.add(nested);
+                                    stack.addLast(new BinderContext(item, nested, item.getClass()));
+                                }
                             }
                         }
-                    } else if (Map.class.isAssignableFrom(field.getType())) {
-                        Map<String, Object> nestedMap = new LinkedHashMap<>();
-                        currentDocument.put(name, nestedMap);
-                        Map<?, ?> sourceMap = (Map<?, ?>) fieldValue;
-                        sourceMap.forEach((k, v) -> nestedMap.put(k.toString(), v));
-                    } else {
-                        Map<String, Object> nested = new LinkedHashMap<>();
-                        currentDocument.put(name, nested);
-                        stack.addLast(new BinderContext(fieldValue, nested, fieldValue.getClass()));
+                        case MAP -> {
+                            Map<Integer, Object> nestedMap = new LinkedHashMap<>();
+                            currentDocument.put(tag, nestedMap);
+                            Map<?, ?> sourceMap = (Map<?, ?>) fieldValue;
+                            sourceMap.forEach((k, v) -> nestedMap.put(((Number) k).intValue(), v));
+                        }
+                        case NESTED -> {
+                            Map<Integer, Object> nested = new LinkedHashMap<>();
+                            currentDocument.put(tag, nested);
+                            stack.addLast(new BinderContext(fieldValue, nested, fieldValue.getClass()));
+                        }
                     }
                 }
-            } catch (IllegalAccessException e) {
+            } catch (RuntimeException e) {
+                throw e;
+            } catch (Throwable e) {
                 throw new RuntimeException(e);
             }
         }
 
-        return new Document(rootDocument, 0);
+        return new BinaryDocument(rootDocument, 0);
     }
 
-    private Object instantiate(Class<?> clazz) {
+    private static Object instantiate(Class<?> clazz) {
         try {
-            Constructor<?> ctor = clazz.getDeclaredConstructor();
-            ctor.setAccessible(true);
-            return ctor.newInstance();
-        } catch (Exception e) {
+            MethodHandle ctor = ctorCache.computeIfAbsent(clazz, c -> {
+                try {
+                    MethodHandles.Lookup lookup = MethodHandles.privateLookupIn(c, MethodHandles.lookup());
+                    return lookup.findConstructor(c, MethodType.methodType(void.class));
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                }
+            });
+            return ctor.invoke();
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Throwable e) {
             throw new RuntimeException(e);
         }
     }
@@ -173,12 +226,82 @@ public class Binder {
         throw new UnsupportedOperationException("Unsupported collection type: " + type);
     }
 
-    private static Map<String, Field> collectFields(Class<?> clazz) {
-        return fieldCache.computeIfAbsent(clazz, c ->
-                Arrays.stream(c.getDeclaredFields())
-                        .peek(f -> f.setAccessible(true))
-                        .collect(Collectors.toMap(Field::getName, f -> f))
-        );
+    private static ClassSchema getSchema(Class<?> clazz) {
+        return schemaCache.computeIfAbsent(clazz, Binder::buildSchema);
+    }
+
+    private static ClassSchema buildSchema(Class<?> clazz) {
+        MethodHandles.Lookup lookup;
+        try {
+            lookup = MethodHandles.privateLookupIn(clazz, MethodHandles.lookup());
+        } catch (IllegalAccessException e) {
+            throw new RuntimeException(e);
+        }
+
+        List<FieldBinding> bindingList = new ArrayList<>();
+        int maxTag = -1;
+
+        for (Field field : clazz.getDeclaredFields()) {
+            if (field.isAnnotationPresent(Transient.class)) {
+                continue;
+            }
+            Tag tag = field.getAnnotation(Tag.class);
+            if (tag == null) {
+                throw new IllegalArgumentException(
+                        "Field '" + field.getName() + "' in class '" + clazz.getName()
+                                + "' must be annotated with @Tag or @Transient");
+            }
+            if (tag.value() < 0) {
+                throw new IllegalArgumentException(
+                        "Tag value for field '" + field.getName() + "' in class '" + clazz.getName()
+                                + "' must be non-negative, got " + tag.value());
+            }
+
+            VarHandle handle;
+            try {
+                handle = lookup.findVarHandle(clazz, field.getName(), field.getType());
+            } catch (NoSuchFieldException | IllegalAccessException e) {
+                throw new RuntimeException(e);
+            }
+
+            FieldKind kind;
+            int bsonDiscriminator = -1;
+            Class<?> fieldType = field.getType();
+
+            if (isPrimitiveOrWrapperOrString(fieldType)) {
+                kind = FieldKind.PRIMITIVE;
+            } else if (fieldType.isEnum()) {
+                kind = FieldKind.ENUM;
+            } else if (Collection.class.isAssignableFrom(fieldType)) {
+                kind = FieldKind.COLLECTION;
+            } else if (Map.class.isAssignableFrom(fieldType)) {
+                kind = FieldKind.MAP;
+            } else if (field.isAnnotationPresent(BsonType.class)) {
+                kind = FieldKind.BSON_TYPE;
+                bsonDiscriminator = field.getAnnotation(BsonType.class).discriminator();
+            } else {
+                kind = FieldKind.NESTED;
+            }
+
+            FieldBinding binding = new FieldBinding(tag.value(), handle, kind, fieldType, field.getGenericType(), bsonDiscriminator);
+            bindingList.add(binding);
+
+            if (tag.value() > maxTag) {
+                maxTag = tag.value();
+            }
+        }
+
+        // Check for duplicate tags
+        FieldBinding[] tagLookup = new FieldBinding[maxTag + 1];
+        for (FieldBinding binding : bindingList) {
+            if (tagLookup[binding.tag] != null) {
+                throw new IllegalArgumentException(
+                        "Duplicate tag value " + binding.tag + " in class '" + clazz.getName() + "'");
+            }
+            tagLookup[binding.tag] = binding;
+        }
+
+        return new ClassSchema(bindingList.toArray(new FieldBinding[0]), tagLookup);
     }
 
     public static boolean isPrimitiveOrWrapperOrString(Class<?> type) {
@@ -214,6 +337,18 @@ public class Binder {
                 || type == String[].class
                 || type == Enum.class
                 || type == ByteBuffer.class;
+    }
+
+    private static Object coerceNumeric(Class<?> targetType, Object value) {
+        if (value instanceof Number num) {
+            if (targetType == Long.class || targetType == long.class) return num.longValue();
+            if (targetType == Integer.class || targetType == int.class) return num.intValue();
+            if (targetType == Double.class || targetType == double.class) return num.doubleValue();
+            if (targetType == Float.class || targetType == float.class) return num.floatValue();
+            if (targetType == Short.class || targetType == short.class) return num.shortValue();
+            if (targetType == Byte.class || targetType == byte.class) return num.byteValue();
+        }
+        return value;
     }
 
     private Type resolveListItemType(Type listType) {
