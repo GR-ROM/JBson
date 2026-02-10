@@ -50,7 +50,7 @@ public class MessagePackBenchmark {
         Pool<WriterContext> writerContextPool = poolFactory.getPool(WriterContext::new);
         bufferPool = poolFactory.getDisposablePool(() -> new DynamicByteBuffer(256 * 1024, true));
 
-        messagePackWriter = new MessagePackWriter(bufferPool, writerContextPool);
+        messagePackWriter = new MessagePackWriter(writerContextPool);
         messagePackReader = new MessagePackReader(readerContextPool, stackPool, false, false);
 
         // Create document with 128KB binary payload
@@ -67,8 +67,8 @@ public class MessagePackBenchmark {
         document128kb = new BinaryDocument(payload128kb);
 
         // Pre-serialize for deserialization benchmark
-        DynamicByteBuffer buffer = messagePackWriter.serialize(document128kb);
-        buffer.flip();
+        DynamicByteBuffer buffer = bufferPool.get();
+        messagePackWriter.serialize(buffer, document128kb);
         serialized128kb = ByteBuffer.allocateDirect(buffer.getBuffer().remaining());
         serialized128kb.put(buffer.getBuffer());
         serialized128kb.flip();
@@ -89,8 +89,8 @@ public class MessagePackBenchmark {
         manyFieldsDocument = new BinaryDocument(fields);
 
         // Pre-serialize many fields for deserialization benchmark
-        DynamicByteBuffer manyFieldsBuffer = messagePackWriter.serialize(manyFieldsDocument);
-        manyFieldsBuffer.flip();
+        DynamicByteBuffer manyFieldsBuffer = bufferPool.get();
+        messagePackWriter.serialize(manyFieldsBuffer, manyFieldsDocument);
         manyFieldsSerialized = ByteBuffer.allocateDirect(manyFieldsBuffer.getBuffer().remaining());
         manyFieldsSerialized.put(manyFieldsBuffer.getBuffer());
         manyFieldsSerialized.flip();
@@ -105,8 +105,8 @@ public class MessagePackBenchmark {
         simple.put(3, 3.14159);
         simpleDocument = new BinaryDocument(simple);
 
-        DynamicByteBuffer simpleBuffer = messagePackWriter.serialize(simpleDocument);
-        simpleBuffer.flip();
+        DynamicByteBuffer simpleBuffer = bufferPool.get();
+        messagePackWriter.serialize(simpleBuffer, simpleDocument);
         simpleSerialized = ByteBuffer.allocateDirect(simpleBuffer.getBuffer().remaining());
         simpleSerialized.put(simpleBuffer.getBuffer());
         simpleSerialized.flip();
@@ -118,8 +118,8 @@ public class MessagePackBenchmark {
 
     @Benchmark
     public DynamicByteBuffer serialize128kb() {
-        DynamicByteBuffer buffer = messagePackWriter.serialize(document128kb);
-        buffer.flip();
+        DynamicByteBuffer buffer = bufferPool.get();
+        messagePackWriter.serialize(buffer, document128kb);
         buffer.dispose();
         bufferPool.release(buffer);
         return buffer;
@@ -135,8 +135,8 @@ public class MessagePackBenchmark {
 
     @Benchmark
     public BinaryDocument roundtrip128kb() {
-        DynamicByteBuffer buffer = messagePackWriter.serialize(document128kb);
-        buffer.flip();
+        DynamicByteBuffer buffer = bufferPool.get();
+        messagePackWriter.serialize(buffer, document128kb);
         BinaryDocument result = new BinaryDocument(new HashMap<>());
         messagePackReader.deserialize(buffer.getBuffer(), result);
         buffer.dispose();
@@ -148,8 +148,8 @@ public class MessagePackBenchmark {
 
     @Benchmark
     public DynamicByteBuffer serializeManyFields() {
-        DynamicByteBuffer buffer = messagePackWriter.serialize(manyFieldsDocument);
-        buffer.flip();
+        DynamicByteBuffer buffer = bufferPool.get();
+        messagePackWriter.serialize(buffer, manyFieldsDocument);
         buffer.dispose();
         bufferPool.release(buffer);
         return buffer;
@@ -165,8 +165,8 @@ public class MessagePackBenchmark {
 
     @Benchmark
     public BinaryDocument roundtripManyFields() {
-        DynamicByteBuffer buffer = messagePackWriter.serialize(manyFieldsDocument);
-        buffer.flip();
+        DynamicByteBuffer buffer = bufferPool.get();
+        messagePackWriter.serialize(buffer, manyFieldsDocument);
         BinaryDocument result = new BinaryDocument(new HashMap<>());
         messagePackReader.deserialize(buffer.getBuffer(), result);
         buffer.dispose();
@@ -178,8 +178,8 @@ public class MessagePackBenchmark {
 
     @Benchmark
     public DynamicByteBuffer serializeSimple() {
-        DynamicByteBuffer buffer = messagePackWriter.serialize(simpleDocument);
-        buffer.flip();
+        DynamicByteBuffer buffer = bufferPool.get();
+        messagePackWriter.serialize(buffer, simpleDocument);
         buffer.dispose();
         bufferPool.release(buffer);
         return buffer;
@@ -195,8 +195,8 @@ public class MessagePackBenchmark {
 
     @Benchmark
     public BinaryDocument roundtripSimple() {
-        DynamicByteBuffer buffer = messagePackWriter.serialize(simpleDocument);
-        buffer.flip();
+        DynamicByteBuffer buffer = bufferPool.get();
+        messagePackWriter.serialize(buffer, simpleDocument);
         BinaryDocument result = new BinaryDocument(new HashMap<>());
         messagePackReader.deserialize(buffer.getBuffer(), result);
         buffer.dispose();

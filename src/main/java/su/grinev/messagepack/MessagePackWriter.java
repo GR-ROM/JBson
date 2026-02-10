@@ -1,7 +1,6 @@
 package su.grinev.messagepack;
 
 import su.grinev.BinaryDocument;
-import su.grinev.pool.DisposablePool;
 import su.grinev.pool.DynamicByteBuffer;
 import su.grinev.pool.Pool;
 
@@ -14,20 +13,16 @@ import java.util.List;
 import java.util.Map;
 
 public class MessagePackWriter {
-
-    private final DisposablePool<DynamicByteBuffer> bufferPool;
     private final Pool<WriterContext> contextPool;
     private final Map<Integer, byte[]> keyCache = new HashMap<>();
 
-    public MessagePackWriter(DisposablePool<DynamicByteBuffer> bufferPool, Pool<WriterContext> contextPool) {
-        this.bufferPool = bufferPool;
+    public MessagePackWriter(Pool<WriterContext> contextPool) {
         this.contextPool = contextPool;
     }
 
     @SuppressWarnings("unchecked")
-    public DynamicByteBuffer serialize(BinaryDocument document) {
+    public void serialize(DynamicByteBuffer buffer, BinaryDocument document) {
         Map<Integer, Object> documentMap = document.getDocumentMap();
-        DynamicByteBuffer buffer = bufferPool.get();
         buffer.getBuffer().clear().order(ByteOrder.BIG_ENDIAN);
         LinkedList<WriterContext> stack = new LinkedList<>();
         stack.push(contextPool.get().init(documentMap.entrySet().iterator()));
@@ -60,16 +55,7 @@ public class MessagePackWriter {
             }
         }
 
-        return buffer;
-    }
-
-    private byte[] computeKey(Integer key) {
-        if (key < 127) {
-            return keyCache.computeIfAbsent(key, k -> new byte[]{(byte) (key & 0x7F)});
-        } else if (key < 32768) {
-            return keyCache.computeIfAbsent(key, k -> new byte[]{(byte) 0xFF, (byte) (key & 0xFF), (byte) ((key >> 8) & 0xFF) });
-        }
-        throw new IllegalArgumentException("key out of range");
+        buffer.flip();
     }
 
     private void writeMapHeader(DynamicByteBuffer buffer, int size) {

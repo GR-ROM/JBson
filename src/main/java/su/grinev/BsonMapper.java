@@ -3,6 +3,7 @@ package su.grinev;
 import lombok.Getter;
 import su.grinev.bson.BsonObjectReader;
 import su.grinev.bson.BsonObjectWriter;
+import su.grinev.pool.DisposablePool;
 import su.grinev.pool.DynamicByteBuffer;
 import su.grinev.pool.PoolFactory;
 
@@ -19,16 +20,20 @@ public class BsonMapper {
     private final Binder readerBinder = new Binder();
     private final BsonObjectWriter bsonObjectWriter;
     private final BsonObjectReader bsonObjectReader;
+    private final DisposablePool<DynamicByteBuffer> bufferPool;
 
     public BsonMapper(PoolFactory poolFactory, int documentSize, int initialCStringSize, Supplier<ByteBuffer> byteBufferAllocator) {
         this.poolFactory = poolFactory;
         this.bsonObjectWriter = new BsonObjectWriter(poolFactory, documentSize, true);
         this.bsonObjectReader = new BsonObjectReader(poolFactory, documentSize, true, byteBufferAllocator);
+        this.bufferPool = poolFactory.getDisposablePool("bson-mapper-buffer-pool", () -> new DynamicByteBuffer(documentSize, true));
     }
 
     public DynamicByteBuffer serialize(Object o) {
         BinaryDocument document = writerBinder.unbind(o);
-        return bsonObjectWriter.serialize(document);
+        DynamicByteBuffer buffer = bufferPool.get();
+        bsonObjectWriter.serialize(buffer, document);
+        return buffer;
     }
 
     public void serialize(Object o, OutputStream outputStream) throws IOException {

@@ -78,9 +78,7 @@ public class DtoBenchmarkTest {
         Pool<ArrayDeque<ReaderContext>> mpStackPool =
                 poolFactory.getPool(() -> new ArrayDeque<>(64));
         Pool<WriterContext> mpWriterCtxPool = poolFactory.getPool(WriterContext::new);
-        DisposablePool<DynamicByteBuffer> mpBufferPool =
-                poolFactory.getDisposablePool(() -> new DynamicByteBuffer(4096, true));
-        MessagePackWriter msgpackWriter = new MessagePackWriter(mpBufferPool, mpWriterCtxPool);
+        MessagePackWriter msgpackWriter = new MessagePackWriter(mpWriterCtxPool);
         MessagePackReader msgpackReader = new MessagePackReader(
                 mpReaderCtxPool, mpStackPool, true, true);
 
@@ -124,17 +122,15 @@ public class DtoBenchmarkTest {
         jsonPreBuf.getBuffer().get(jsonBytes);
         jsonPreBuf.dispose();
 
-        DynamicByteBuffer bsonPreBuf = bsonWriter.serialize(binaryDoc);
-        bsonPreBuf.flip();
+        DynamicByteBuffer bsonPreBuf = new DynamicByteBuffer(4096, true);
+        bsonWriter.serialize(bsonPreBuf, binaryDoc);
         byte[] bsonBytes = new byte[bsonPreBuf.getBuffer().remaining()];
         bsonPreBuf.getBuffer().get(bsonBytes);
-        bsonPreBuf.dispose();
 
-        DynamicByteBuffer mpPreBuf = msgpackWriter.serialize(binaryDoc);
-        mpPreBuf.flip();
+        DynamicByteBuffer mpPreBuf = new DynamicByteBuffer(4096, true);
+        msgpackWriter.serialize(mpPreBuf, binaryDoc);
         byte[] msgpackBytes = new byte[mpPreBuf.getBuffer().remaining()];
         mpPreBuf.getBuffer().get(msgpackBytes);
-        mpPreBuf.dispose();
 
         byte[] protoBytes = protoDto.toByteArray();
 
@@ -166,17 +162,15 @@ public class DtoBenchmarkTest {
 
             packetBuf.rewind();
             BinaryDocument doc = binder.unbind(dto);
-            buf = bsonWriter.serialize(doc);
-            buf.flip();
-            bsonReader.deserialize(buf.getBuffer(), new BinaryDocument(new HashMap<>()));
-            buf.dispose();
+            DynamicByteBuffer bsonBuf = new DynamicByteBuffer(4096, true);
+            bsonWriter.serialize(bsonBuf, doc);
+            bsonReader.deserialize(bsonBuf.getBuffer(), new BinaryDocument(new HashMap<>()));
 
             packetBuf.rewind();
             doc = binder.unbind(dto);
-            buf = msgpackWriter.serialize(doc);
-            buf.flip();
-            msgpackReader.deserialize(buf.getBuffer(), new BinaryDocument(new HashMap<>()));
-            buf.dispose();
+            DynamicByteBuffer mpBuf = new DynamicByteBuffer(4096, true);
+            msgpackWriter.serialize(mpBuf, doc);
+            msgpackReader.deserialize(mpBuf.getBuffer(), new BinaryDocument(new HashMap<>()));
         }
 
         // ---- Benchmark serialization ----
@@ -190,23 +184,25 @@ public class DtoBenchmarkTest {
         }
 
         List<Long> bsonSerTimes = new ArrayList<>();
+        DynamicByteBuffer bsonReuseBuf = new DynamicByteBuffer(4096, true);
         for (int i = 0; i < ITERATIONS; i++) {
             packetBuf.rewind();
             BinaryDocument doc = binder.unbind(dto);
+            bsonReuseBuf.getBuffer().clear();
             long start = System.nanoTime();
-            DynamicByteBuffer buf = bsonWriter.serialize(doc);
+            bsonWriter.serialize(bsonReuseBuf, doc);
             bsonSerTimes.add(System.nanoTime() - start);
-            buf.dispose();
         }
 
         List<Long> msgpackSerTimes = new ArrayList<>();
+        DynamicByteBuffer mpReuseBuf = new DynamicByteBuffer(4096, true);
         for (int i = 0; i < ITERATIONS; i++) {
             packetBuf.rewind();
             BinaryDocument doc = binder.unbind(dto);
+            mpReuseBuf.getBuffer().clear();
             long start = System.nanoTime();
-            DynamicByteBuffer buf = msgpackWriter.serialize(doc);
+            msgpackWriter.serialize(mpReuseBuf, doc);
             msgpackSerTimes.add(System.nanoTime() - start);
-            buf.dispose();
         }
 
         List<Long> protoSerTimes = new ArrayList<>();
@@ -314,9 +310,7 @@ public class DtoBenchmarkTest {
         Pool<ArrayDeque<ReaderContext>> msgpackStackPool =
                 poolFactory.getPool(() -> new ArrayDeque<>(64));
         Pool<WriterContext> msgpackWriterCtxPool = poolFactory.getPool(WriterContext::new);
-        DisposablePool<DynamicByteBuffer> msgpackBufferPool =
-                poolFactory.getDisposablePool(() -> new DynamicByteBuffer(512 * 1024, true));
-        MessagePackWriter msgpackWriter = new MessagePackWriter(msgpackBufferPool, msgpackWriterCtxPool);
+        MessagePackWriter msgpackWriter = new MessagePackWriter(msgpackWriterCtxPool);
         MessagePackReader msgpackReader = new MessagePackReader(
                 msgpackReaderCtxPool, msgpackStackPool, true, true);
 
@@ -347,17 +341,15 @@ public class DtoBenchmarkTest {
         jsonPreBuf.getBuffer().get(jsonBytes);
         jsonPreBuf.dispose();
 
-        DynamicByteBuffer bsonPreBuf = bsonWriter.serialize(binaryDocument);
-        bsonPreBuf.flip();
+        DynamicByteBuffer bsonPreBuf = new DynamicByteBuffer(512 * 1024, true);
+        bsonWriter.serialize(bsonPreBuf, binaryDocument);
         byte[] bsonBytes = new byte[bsonPreBuf.getBuffer().remaining()];
         bsonPreBuf.getBuffer().get(bsonBytes);
-        bsonPreBuf.dispose();
 
-        DynamicByteBuffer msgpackPreBuf = msgpackWriter.serialize(binaryDocument);
-        msgpackPreBuf.flip();
+        DynamicByteBuffer msgpackPreBuf = new DynamicByteBuffer(512 * 1024, true);
+        msgpackWriter.serialize(msgpackPreBuf, binaryDocument);
         byte[] msgpackBytes = new byte[msgpackPreBuf.getBuffer().remaining()];
         msgpackPreBuf.getBuffer().get(msgpackBytes);
-        msgpackPreBuf.dispose();
 
         byte[] protoBytes = protoDto.toByteArray();
 
@@ -400,15 +392,13 @@ public class DtoBenchmarkTest {
             buf.dispose();
             jsonReader.deserialize(b);
 
-            buf = bsonWriter.serialize(binaryDocument);
-            buf.flip();
-            bsonReader.deserialize(buf.getBuffer(), new BinaryDocument(new HashMap<>()));
-            buf.dispose();
+            DynamicByteBuffer bsonBuf = new DynamicByteBuffer(512 * 1024, true);
+            bsonWriter.serialize(bsonBuf, binaryDocument);
+            bsonReader.deserialize(bsonBuf.getBuffer(), new BinaryDocument(new HashMap<>()));
 
-            buf = msgpackWriter.serialize(binaryDocument);
-            buf.flip();
-            msgpackReader.deserialize(buf.getBuffer(), new BinaryDocument(new HashMap<>()));
-            buf.dispose();
+            DynamicByteBuffer mpBuf = new DynamicByteBuffer(512 * 1024, true);
+            msgpackWriter.serialize(mpBuf, binaryDocument);
+            msgpackReader.deserialize(mpBuf.getBuffer(), new BinaryDocument(new HashMap<>()));
 
             protoDto.toByteArray();
             BlockingsProto.GetBlockingsInfoResultCacheableDto.parseFrom(protoBytes);
@@ -422,11 +412,10 @@ public class DtoBenchmarkTest {
             ois.close();
 
             // LZ4(BSON) warmup
-            buf = bsonWriter.serialize(binaryDocument);
-            buf.flip();
-            byte[] rawBson = new byte[buf.getBuffer().remaining()];
-            buf.getBuffer().get(rawBson);
-            buf.dispose();
+            DynamicByteBuffer lz4BsonBuf = new DynamicByteBuffer(512 * 1024, true);
+            bsonWriter.serialize(lz4BsonBuf, binaryDocument);
+            byte[] rawBson = new byte[lz4BsonBuf.getBuffer().remaining()];
+            lz4BsonBuf.getBuffer().get(rawBson);
             byte[] compressed = new byte[lz4Compressor.maxCompressedLength(rawBson.length)];
             int cLen = lz4Compressor.compress(rawBson, 0, rawBson.length, compressed, 0, compressed.length);
             byte[] decompressed = new byte[rawBson.length];
@@ -434,11 +423,10 @@ public class DtoBenchmarkTest {
             bsonReader.deserialize(ByteBuffer.wrap(decompressed), new BinaryDocument(new HashMap<>()));
 
             // LZ4(MsgPack) warmup
-            buf = msgpackWriter.serialize(binaryDocument);
-            buf.flip();
-            byte[] rawMsgpack = new byte[buf.getBuffer().remaining()];
-            buf.getBuffer().get(rawMsgpack);
-            buf.dispose();
+            DynamicByteBuffer lz4MpBuf = new DynamicByteBuffer(512 * 1024, true);
+            msgpackWriter.serialize(lz4MpBuf, binaryDocument);
+            byte[] rawMsgpack = new byte[lz4MpBuf.getBuffer().remaining()];
+            lz4MpBuf.getBuffer().get(rawMsgpack);
             compressed = new byte[lz4Compressor.maxCompressedLength(rawMsgpack.length)];
             cLen = lz4Compressor.compress(rawMsgpack, 0, rawMsgpack.length, compressed, 0, compressed.length);
             decompressed = new byte[rawMsgpack.length];
@@ -457,47 +445,49 @@ public class DtoBenchmarkTest {
         }
 
         List<Long> bsonSerTimes = new ArrayList<>();
+        DynamicByteBuffer bsonReuseBuf = new DynamicByteBuffer(512 * 1024, true);
         for (int i = 0; i < ITERATIONS; i++) {
+            bsonReuseBuf.getBuffer().clear();
             long start = System.nanoTime();
-            DynamicByteBuffer buf = bsonWriter.serialize(binaryDocument);
+            bsonWriter.serialize(bsonReuseBuf, binaryDocument);
             bsonSerTimes.add(System.nanoTime() - start);
-            buf.dispose();
         }
 
         List<Long> msgpackSerTimes = new ArrayList<>();
+        DynamicByteBuffer mpReuseBuf = new DynamicByteBuffer(512 * 1024, true);
         for (int i = 0; i < ITERATIONS; i++) {
+            mpReuseBuf.getBuffer().clear();
             long start = System.nanoTime();
-            DynamicByteBuffer buf = msgpackWriter.serialize(binaryDocument);
+            msgpackWriter.serialize(mpReuseBuf, binaryDocument);
             msgpackSerTimes.add(System.nanoTime() - start);
-            buf.dispose();
         }
 
         List<Long> lz4BsonSerTimes = new ArrayList<>();
+        DynamicByteBuffer lz4BsonReuseBuf = new DynamicByteBuffer(512 * 1024, true);
         for (int i = 0; i < ITERATIONS; i++) {
+            lz4BsonReuseBuf.getBuffer().clear();
             long start = System.nanoTime();
-            DynamicByteBuffer buf = bsonWriter.serialize(binaryDocument);
-            buf.flip();
-            int len = buf.getBuffer().remaining();
+            bsonWriter.serialize(lz4BsonReuseBuf, binaryDocument);
+            int len = lz4BsonReuseBuf.getBuffer().remaining();
             byte[] raw = new byte[len];
-            buf.getBuffer().get(raw);
+            lz4BsonReuseBuf.getBuffer().get(raw);
             byte[] dest = new byte[lz4Compressor.maxCompressedLength(len)];
             lz4Compressor.compress(raw, 0, len, dest, 0, dest.length);
             lz4BsonSerTimes.add(System.nanoTime() - start);
-            buf.dispose();
         }
 
         List<Long> lz4MsgpackSerTimes = new ArrayList<>();
+        DynamicByteBuffer lz4MpReuseBuf = new DynamicByteBuffer(512 * 1024, true);
         for (int i = 0; i < ITERATIONS; i++) {
+            lz4MpReuseBuf.getBuffer().clear();
             long start = System.nanoTime();
-            DynamicByteBuffer buf = msgpackWriter.serialize(binaryDocument);
-            buf.flip();
-            int len = buf.getBuffer().remaining();
+            msgpackWriter.serialize(lz4MpReuseBuf, binaryDocument);
+            int len = lz4MpReuseBuf.getBuffer().remaining();
             byte[] raw = new byte[len];
-            buf.getBuffer().get(raw);
+            lz4MpReuseBuf.getBuffer().get(raw);
             byte[] dest = new byte[lz4Compressor.maxCompressedLength(len)];
             lz4Compressor.compress(raw, 0, len, dest, 0, dest.length);
             lz4MsgpackSerTimes.add(System.nanoTime() - start);
-            buf.dispose();
         }
 
         List<Long> protoSerTimes = new ArrayList<>();
@@ -590,56 +580,55 @@ public class DtoBenchmarkTest {
         for (int i = 0; i < WARMUP; i++) {
             BinaryDocument doc = binder.unbind(dto);
 
-            DynamicByteBuffer buf = bsonWriter.serialize(doc);
-            buf.flip();
+            DynamicByteBuffer bsonBuf = new DynamicByteBuffer(512 * 1024, true);
+            bsonWriter.serialize(bsonBuf, doc);
             BinaryDocument deser = new BinaryDocument(new HashMap<>());
-            bsonReader.deserialize(buf.getBuffer(), deser);
+            bsonReader.deserialize(bsonBuf.getBuffer(), deser);
             binder.bind(GetBlockingsInfoResultCacheableDto.class, deser);
-            buf.dispose();
 
-            buf = msgpackWriter.serialize(doc);
-            buf.flip();
+            DynamicByteBuffer mpBuf = new DynamicByteBuffer(512 * 1024, true);
+            msgpackWriter.serialize(mpBuf, doc);
             deser = new BinaryDocument(new HashMap<>());
-            msgpackReader.deserialize(buf.getBuffer(), deser);
+            msgpackReader.deserialize(mpBuf.getBuffer(), deser);
             binder.bind(GetBlockingsInfoResultCacheableDto.class, deser);
-            buf.dispose();
         }
 
         List<Long> bsonRoundtripTimes = new ArrayList<>();
+        DynamicByteBuffer bsonRtBuf = new DynamicByteBuffer(512 * 1024, true);
         for (int i = 0; i < ITERATIONS; i++) {
+            bsonRtBuf.getBuffer().clear();
             long start = System.nanoTime();
             BinaryDocument doc = binder.unbind(dto);
-            DynamicByteBuffer buf = bsonWriter.serialize(doc);
-            buf.flip();
+            bsonWriter.serialize(bsonRtBuf, doc);
             BinaryDocument deser = new BinaryDocument(new HashMap<>());
-            bsonReader.deserialize(buf.getBuffer(), deser);
+            bsonReader.deserialize(bsonRtBuf.getBuffer(), deser);
             binder.bind(GetBlockingsInfoResultCacheableDto.class, deser);
             bsonRoundtripTimes.add(System.nanoTime() - start);
-            buf.dispose();
         }
 
         List<Long> msgpackRoundtripTimes = new ArrayList<>();
+        DynamicByteBuffer mpRtBuf = new DynamicByteBuffer(512 * 1024, true);
         for (int i = 0; i < ITERATIONS; i++) {
+            mpRtBuf.getBuffer().clear();
             long start = System.nanoTime();
             BinaryDocument doc = binder.unbind(dto);
-            DynamicByteBuffer buf = msgpackWriter.serialize(doc);
-            buf.flip();
+            msgpackWriter.serialize(mpRtBuf, doc);
             BinaryDocument deser = new BinaryDocument(new HashMap<>());
-            msgpackReader.deserialize(buf.getBuffer(), deser);
+            msgpackReader.deserialize(mpRtBuf.getBuffer(), deser);
             binder.bind(GetBlockingsInfoResultCacheableDto.class, deser);
             msgpackRoundtripTimes.add(System.nanoTime() - start);
-            buf.dispose();
         }
 
         List<Long> lz4BsonRoundtripTimes = new ArrayList<>();
+        DynamicByteBuffer lz4BsonRtBuf = new DynamicByteBuffer(512 * 1024, true);
         for (int i = 0; i < ITERATIONS; i++) {
+            lz4BsonRtBuf.getBuffer().clear();
             long start = System.nanoTime();
             BinaryDocument doc = binder.unbind(dto);
-            DynamicByteBuffer buf = bsonWriter.serialize(doc);
-            buf.flip();
-            int len = buf.getBuffer().remaining();
+            bsonWriter.serialize(lz4BsonRtBuf, doc);
+            int len = lz4BsonRtBuf.getBuffer().remaining();
             byte[] raw = new byte[len];
-            buf.getBuffer().get(raw);
+            lz4BsonRtBuf.getBuffer().get(raw);
             byte[] cdest = new byte[lz4Compressor.maxCompressedLength(len)];
             int clen = lz4Compressor.compress(raw, 0, len, cdest, 0, cdest.length);
             byte[] decompressed = new byte[len];
@@ -648,18 +637,18 @@ public class DtoBenchmarkTest {
             bsonReader.deserialize(ByteBuffer.wrap(decompressed), deser);
             binder.bind(GetBlockingsInfoResultCacheableDto.class, deser);
             lz4BsonRoundtripTimes.add(System.nanoTime() - start);
-            buf.dispose();
         }
 
         List<Long> lz4MsgpackRoundtripTimes = new ArrayList<>();
+        DynamicByteBuffer lz4MpRtBuf = new DynamicByteBuffer(512 * 1024, true);
         for (int i = 0; i < ITERATIONS; i++) {
+            lz4MpRtBuf.getBuffer().clear();
             long start = System.nanoTime();
             BinaryDocument doc = binder.unbind(dto);
-            DynamicByteBuffer buf = msgpackWriter.serialize(doc);
-            buf.flip();
-            int len = buf.getBuffer().remaining();
+            msgpackWriter.serialize(lz4MpRtBuf, doc);
+            int len = lz4MpRtBuf.getBuffer().remaining();
             byte[] raw = new byte[len];
-            buf.getBuffer().get(raw);
+            lz4MpRtBuf.getBuffer().get(raw);
             byte[] cdest = new byte[lz4Compressor.maxCompressedLength(len)];
             int clen = lz4Compressor.compress(raw, 0, len, cdest, 0, cdest.length);
             byte[] decompressed = new byte[len];
@@ -668,7 +657,6 @@ public class DtoBenchmarkTest {
             msgpackReader.deserialize(ByteBuffer.wrap(decompressed), deser);
             binder.bind(GetBlockingsInfoResultCacheableDto.class, deser);
             lz4MsgpackRoundtripTimes.add(System.nanoTime() - start);
-            buf.dispose();
         }
 
         List<Long> protoRoundtripTimes = new ArrayList<>();

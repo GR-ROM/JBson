@@ -56,8 +56,7 @@ public class BsonObjectWriter {
         return index < INDEX_BYTES.length ? INDEX_BYTES[index] : Integer.toString(index).getBytes(StandardCharsets.UTF_8);
     }
 
-    public DynamicByteBuffer serialize(BinaryDocument document) {
-        DynamicByteBuffer buffer = dynamicByteBufferPool.get();
+    public void serialize(DynamicByteBuffer buffer, BinaryDocument document) {
         buffer.initBuffer();
         ArrayDeque<WriterContext> stack = stackPool.get();
         try {
@@ -69,7 +68,7 @@ public class BsonObjectWriter {
             stack.clear();
             stackPool.release(stack);
         }
-        return buffer;
+        buffer.flip();
     }
 
     private void serializeLoop(DynamicByteBuffer buffer, Deque<WriterContext> stack) {
@@ -291,8 +290,8 @@ public class BsonObjectWriter {
     }
 
     public void serialize(BinaryDocument document, OutputStream outputStream) throws IOException {
-        try (DynamicByteBuffer dynamicByteBuffer = serialize(document)) {
-            dynamicByteBuffer.flip();
+        try (DynamicByteBuffer dynamicByteBuffer = dynamicByteBufferPool.get()) {
+            serialize(dynamicByteBuffer, document);
             byte[] buf = bufferPool.get();
             try {
                 while (dynamicByteBuffer.getBuffer().hasRemaining()) {

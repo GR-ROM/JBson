@@ -115,6 +115,9 @@ public class BsonObjectReader {
         }
 
         int totalLength = ByteBuffer.wrap(lengthBytes).order(ByteOrder.LITTLE_ENDIAN).getInt();
+        if (totalLength <= 0 || totalLength > documentSizeLimit) {
+            throw new IOException("Invalid document length: " + totalLength + " (limit: " + documentSizeLimit + ")");
+        }
         byte[] documentBytes = packetPool.get();
         try {
             System.arraycopy(lengthBytes, 0, documentBytes, 0, 4);

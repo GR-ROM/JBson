@@ -2,7 +2,6 @@ package su.grinev;
 
 import org.junit.jupiter.api.Test;
 import su.grinev.messagepack.*;
-import su.grinev.pool.DisposablePool;
 import su.grinev.pool.DynamicByteBuffer;
 import su.grinev.pool.Pool;
 import su.grinev.pool.PoolFactory;
@@ -24,19 +23,18 @@ public class MessagePackTest {
     private final Pool<ReaderContext> readerContextPool = poolFactory.getPool(ReaderContext::new);
     private final Pool<ArrayDeque<ReaderContext>> stackPool = poolFactory.getPool(() -> new ArrayDeque<>(64));
     private final Pool<WriterContext> writerContextPool = poolFactory.getPool(WriterContext::new);
-    private final DisposablePool<DynamicByteBuffer> bufferPool = poolFactory.getDisposablePool(() -> new DynamicByteBuffer(129 * 1024, true));
 
     @Test
     public void serializeSimpleMap() {
-        MessagePackWriter writer = new MessagePackWriter(bufferPool, writerContextPool);
+        MessagePackWriter writer = new MessagePackWriter(writerContextPool);
 
         Map<Integer, Object> map = new HashMap<>();
         map.put(0, 42);
         map.put(1, "test");
 
-        DynamicByteBuffer result = writer.serialize(new BinaryDocument(map));
-        ByteBuffer buf = result.getBuffer();
-        buf.flip();
+        DynamicByteBuffer buffer = new DynamicByteBuffer(129 * 1024, true);
+        writer.serialize(buffer, new BinaryDocument(map));
+        ByteBuffer buf = buffer.getBuffer();
 
         MessagePackReader reader = new MessagePackReader(readerContextPool, stackPool, false, false);
         BinaryDocument deserialized = new BinaryDocument(new HashMap<>());
@@ -48,7 +46,7 @@ public class MessagePackTest {
 
     @Test
     public void serializeNestedMap() {
-        MessagePackWriter writer = new MessagePackWriter(bufferPool, writerContextPool);
+        MessagePackWriter writer = new MessagePackWriter(writerContextPool);
 
         Map<Integer, Object> nested = new HashMap<>();
         nested.put(0, 2);
@@ -58,9 +56,9 @@ public class MessagePackTest {
         root.put(0, 1);
         root.put(1, nested);
 
-        DynamicByteBuffer result = writer.serialize(new BinaryDocument(root));
-        ByteBuffer buf = result.getBuffer();
-        buf.flip();
+        DynamicByteBuffer buffer = new DynamicByteBuffer(129 * 1024, true);
+        writer.serialize(buffer, new BinaryDocument(root));
+        ByteBuffer buf = buffer.getBuffer();
 
         MessagePackReader reader = new MessagePackReader(readerContextPool, stackPool, false, false);
         BinaryDocument deserialized = new BinaryDocument(new HashMap<>());
@@ -74,7 +72,7 @@ public class MessagePackTest {
     @Test
     @SuppressWarnings("unchecked")
     public void serializeComplexObject() {
-        MessagePackWriter writer = new MessagePackWriter(bufferPool, writerContextPool);
+        MessagePackWriter writer = new MessagePackWriter(writerContextPool);
 
         Map<Integer, Object> map = new HashMap<>();
         map.put(0, null);
@@ -88,9 +86,9 @@ public class MessagePackTest {
         map.put(8, new byte[]{0x01, 0x02, 0x03});
         map.put(9, List.of(1, 2, 3));
 
-        DynamicByteBuffer result = writer.serialize(new BinaryDocument(map));
-        ByteBuffer buf = result.getBuffer();
-        buf.flip();
+        DynamicByteBuffer buffer = new DynamicByteBuffer(129 * 1024, true);
+        writer.serialize(buffer, new BinaryDocument(map));
+        ByteBuffer buf = buffer.getBuffer();
 
         MessagePackReader reader = new MessagePackReader(readerContextPool, stackPool, false, false);
         BinaryDocument deserialized = new BinaryDocument(new HashMap<>());
@@ -117,7 +115,7 @@ public class MessagePackTest {
 
     @Test
     public void serializeDeeplyNestedMaps() {
-        MessagePackWriter writer = new MessagePackWriter(bufferPool, writerContextPool);
+        MessagePackWriter writer = new MessagePackWriter(writerContextPool);
 
         Map<Integer, Object> level3 = new HashMap<>();
         level3.put(0, "deep");
@@ -131,9 +129,9 @@ public class MessagePackTest {
         Map<Integer, Object> root = new HashMap<>();
         root.put(0, level1);
 
-        DynamicByteBuffer result = writer.serialize(new BinaryDocument(root));
-        ByteBuffer buf = result.getBuffer();
-        buf.flip();
+        DynamicByteBuffer buffer = new DynamicByteBuffer(129 * 1024, true);
+        writer.serialize(buffer, new BinaryDocument(root));
+        ByteBuffer buf = buffer.getBuffer();
 
         MessagePackReader reader = new MessagePackReader(readerContextPool, stackPool, false, false);
         BinaryDocument deserialized = new BinaryDocument(new HashMap<>());
@@ -154,10 +152,11 @@ public class MessagePackTest {
         Pool<ReaderContext> localReaderPool = localFactory.getPool(ReaderContext::new);
         Pool<ArrayDeque<ReaderContext>> localStackPool = localFactory.getPool(() -> new ArrayDeque<>(64));
         Pool<WriterContext> localWriterPool = localFactory.getPool(WriterContext::new);
-        DisposablePool<DynamicByteBuffer> localBufferPool = localFactory.getDisposablePool(() -> new DynamicByteBuffer(129 * 1024, true));
 
-        MessagePackWriter writer = new MessagePackWriter(localBufferPool, localWriterPool);
+        MessagePackWriter writer = new MessagePackWriter(localWriterPool);
         MessagePackReader reader = new MessagePackReader(localReaderPool, localStackPool, false, false);
+
+        DynamicByteBuffer buffer = new DynamicByteBuffer(129 * 1024, true);
 
         // Run multiple serialization/deserialization cycles
         for (int i = 0; i < 10; i++) {
@@ -165,16 +164,12 @@ public class MessagePackTest {
             map.put(0, i);
             map.put(1, Map.of(0, i * 2));
 
-            DynamicByteBuffer result = writer.serialize(new BinaryDocument(map));
-            ByteBuffer buf = result.getBuffer();
-            buf.flip();
+            writer.serialize(buffer, new BinaryDocument(map));
+            ByteBuffer buf = buffer.getBuffer();
 
             BinaryDocument deserialized = new BinaryDocument(new HashMap<>());
             reader.deserialize(buf, deserialized);
             assertEquals(i, deserialized.get("0"));
-
-            result.dispose();
-            localBufferPool.release(result);
         }
 
         // Pool should have reused contexts - max pool size is 5, but we did 10 iterations
@@ -183,14 +178,14 @@ public class MessagePackTest {
 
     @Test
     public void serializeExtension() {
-        MessagePackWriter writer = new MessagePackWriter(bufferPool, writerContextPool);
+        MessagePackWriter writer = new MessagePackWriter(writerContextPool);
 
         Map<Integer, Object> map = new HashMap<>();
         map.put(0, new MessagePackExtension((byte) 1, new byte[]{0x01, 0x02, 0x03, 0x04}));
 
-        DynamicByteBuffer result = writer.serialize(new BinaryDocument(map));
-        ByteBuffer buf = result.getBuffer();
-        buf.flip();
+        DynamicByteBuffer buffer = new DynamicByteBuffer(129 * 1024, true);
+        writer.serialize(buffer, new BinaryDocument(map));
+        ByteBuffer buf = buffer.getBuffer();
 
         MessagePackReader reader = new MessagePackReader(readerContextPool, stackPool, false, false);
         BinaryDocument deserialized = new BinaryDocument(new HashMap<>());
@@ -215,9 +210,8 @@ public class MessagePackTest {
                 .setBlocking(true)
                 .build();
 
-        DisposablePool<DynamicByteBuffer> perfBufferPool = perfPoolFactory.getDisposablePool(() -> new DynamicByteBuffer(256 * 1024, true));
         Pool<WriterContext> perfWriterPool = perfPoolFactory.getPool(WriterContext::new);
-        MessagePackWriter writer = new MessagePackWriter(perfBufferPool, perfWriterPool);
+        MessagePackWriter writer = new MessagePackWriter(perfWriterPool);
 
         byte[] payload = new byte[128 * 1024];
         for (int i = 0; i < payload.length; i++) payload[i] = (byte) (i % 128);
@@ -228,19 +222,17 @@ public class MessagePackTest {
         map.put(2, payload);
         BinaryDocument doc = new BinaryDocument(map);
 
+        DynamicByteBuffer buffer = new DynamicByteBuffer(256 * 1024, true);
+
         // Warmup
         for (int i = 0; i < WARMUP_ITERATIONS; i++) {
-            DynamicByteBuffer buf = writer.serialize(doc);
-            buf.dispose();
-            perfBufferPool.release(buf);
+            writer.serialize(buffer, doc);
         }
 
         // Measure
         long start = System.nanoTime();
         for (int i = 0; i < MEASURE_ITERATIONS; i++) {
-            DynamicByteBuffer buf = writer.serialize(doc);
-            buf.dispose();
-            perfBufferPool.release(buf);
+            writer.serialize(buffer, doc);
         }
         long elapsed = System.nanoTime() - start;
 
@@ -259,12 +251,11 @@ public class MessagePackTest {
                 .setBlocking(true)
                 .build();
 
-        DisposablePool<DynamicByteBuffer> perfBufferPool = perfPoolFactory.getDisposablePool(() -> new DynamicByteBuffer(256 * 1024, true));
         Pool<WriterContext> perfWriterPool = perfPoolFactory.getPool(WriterContext::new);
         Pool<ReaderContext> perfReaderPool = perfPoolFactory.getPool(ReaderContext::new);
         Pool<ArrayDeque<ReaderContext>> perfStackPool = perfPoolFactory.getPool(() -> new ArrayDeque<>(64));
 
-        MessagePackWriter writer = new MessagePackWriter(perfBufferPool, perfWriterPool);
+        MessagePackWriter writer = new MessagePackWriter(perfWriterPool);
         MessagePackReader reader = new MessagePackReader(perfReaderPool, perfStackPool, false, false);
 
         byte[] payload = new byte[128 * 1024];
@@ -275,12 +266,10 @@ public class MessagePackTest {
         map.put(1, 12345L);
         map.put(2, payload);
 
-        DynamicByteBuffer serialized = writer.serialize(new BinaryDocument(map));
-        serialized.flip();
+        DynamicByteBuffer serialized = new DynamicByteBuffer(256 * 1024, true);
+        writer.serialize(serialized, new BinaryDocument(map));
         ByteBuffer data = ByteBuffer.allocateDirect(serialized.getBuffer().remaining());
         data.put(serialized.getBuffer());
-        serialized.dispose();
-        perfBufferPool.release(serialized);
 
         // Warmup
         for (int i = 0; i < WARMUP_ITERATIONS; i++) {
@@ -311,12 +300,11 @@ public class MessagePackTest {
                 .setBlocking(true)
                 .build();
 
-        DisposablePool<DynamicByteBuffer> perfBufferPool = perfPoolFactory.getDisposablePool(() -> new DynamicByteBuffer(256 * 1024, true));
         Pool<WriterContext> perfWriterPool = perfPoolFactory.getPool(WriterContext::new);
         Pool<ReaderContext> perfReaderPool = perfPoolFactory.getPool(ReaderContext::new);
         Pool<ArrayDeque<ReaderContext>> perfStackPool = perfPoolFactory.getPool(() -> new ArrayDeque<>(64));
 
-        MessagePackWriter writer = new MessagePackWriter(perfBufferPool, perfWriterPool);
+        MessagePackWriter writer = new MessagePackWriter(perfWriterPool);
         MessagePackReader reader = new MessagePackReader(perfReaderPool, perfStackPool, false, false);
 
         byte[] payload = new byte[128 * 1024];
@@ -328,23 +316,19 @@ public class MessagePackTest {
         map.put(2, payload);
         BinaryDocument doc = new BinaryDocument(map);
 
+        DynamicByteBuffer buffer = new DynamicByteBuffer(256 * 1024, true);
+
         // Warmup
         for (int i = 0; i < WARMUP_ITERATIONS; i++) {
-            DynamicByteBuffer buf = writer.serialize(doc);
-            buf.flip();
-            reader.deserialize(buf.getBuffer(), new BinaryDocument(new HashMap<>()));
-            buf.dispose();
-            perfBufferPool.release(buf);
+            writer.serialize(buffer, doc);
+            reader.deserialize(buffer.getBuffer(), new BinaryDocument(new HashMap<>()));
         }
 
         // Measure
         long start = System.nanoTime();
         for (int i = 0; i < MEASURE_ITERATIONS; i++) {
-            DynamicByteBuffer buf = writer.serialize(doc);
-            buf.flip();
-            reader.deserialize(buf.getBuffer(), new BinaryDocument(new HashMap<>()));
-            buf.dispose();
-            perfBufferPool.release(buf);
+            writer.serialize(buffer, doc);
+            reader.deserialize(buffer.getBuffer(), new BinaryDocument(new HashMap<>()));
         }
         long elapsed = System.nanoTime() - start;
 
@@ -363,12 +347,11 @@ public class MessagePackTest {
                 .setBlocking(true)
                 .build();
 
-        DisposablePool<DynamicByteBuffer> perfBufferPool = perfPoolFactory.getDisposablePool(() -> new DynamicByteBuffer(512 * 1024, true));
         Pool<WriterContext> perfWriterPool = perfPoolFactory.getPool(WriterContext::new);
         Pool<ReaderContext> perfReaderPool = perfPoolFactory.getPool(ReaderContext::new);
         Pool<ArrayDeque<ReaderContext>> perfStackPool = perfPoolFactory.getPool(() -> new ArrayDeque<>(64));
 
-        MessagePackWriter writer = new MessagePackWriter(perfBufferPool, perfWriterPool);
+        MessagePackWriter writer = new MessagePackWriter(perfWriterPool);
         MessagePackReader reader = new MessagePackReader(perfReaderPool, perfStackPool, false, false);
 
         // 1000 nested objects
@@ -384,27 +367,23 @@ public class MessagePackTest {
         BinaryDocument doc = new BinaryDocument(fields);
 
         // Pre-serialize for deserialize test
-        DynamicByteBuffer preSerialized = writer.serialize(doc);
-        preSerialized.flip();
+        DynamicByteBuffer preSerialized = new DynamicByteBuffer(512 * 1024, true);
+        writer.serialize(preSerialized, doc);
         ByteBuffer data = ByteBuffer.allocateDirect(preSerialized.getBuffer().remaining());
         data.put(preSerialized.getBuffer());
         int dataSize = data.position();
-        preSerialized.dispose();
-        perfBufferPool.release(preSerialized);
+
+        DynamicByteBuffer buffer = new DynamicByteBuffer(512 * 1024, true);
 
         // Warmup
         for (int i = 0; i < WARMUP_ITERATIONS; i++) {
-            DynamicByteBuffer buf = writer.serialize(doc);
-            buf.dispose();
-            perfBufferPool.release(buf);
+            writer.serialize(buffer, doc);
         }
 
         // Measure serialize
         long startSer = System.nanoTime();
         for (int i = 0; i < MEASURE_ITERATIONS; i++) {
-            DynamicByteBuffer buf = writer.serialize(doc);
-            buf.dispose();
-            perfBufferPool.release(buf);
+            writer.serialize(buffer, doc);
         }
         long elapsedSer = System.nanoTime() - startSer;
 

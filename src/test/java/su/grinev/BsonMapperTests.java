@@ -15,7 +15,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.*;
 import static su.grinev.test.Command.FOO;
 
 public class BsonMapperTests {
@@ -42,11 +42,88 @@ public class BsonMapperTests {
         vpnRequestDto.setTimestamp(Instant.ofEpochMilli(Instant.now().toEpochMilli()));
 
         DynamicByteBuffer b = bsonMapper.serialize(vpnRequestDto);
-        b.flip();
         VpnRequestDto<?> deserialized = bsonMapper.deserialize(b.getBuffer(), VpnRequestDto.class);
 
         b.dispose();
         assertEquals(vpnRequestDto, deserialized);
+    }
+
+    /**
+     * Verifies that BsonMapper.serialize() returns a buffer already flipped in read mode.
+     * The serialize method now calls flip() internally, so the caller can read immediately.
+     */
+    @Test
+    public void serializeReturnsFlippedBufferTest() {
+        PoolFactory poolFactory = PoolFactory.Builder.builder()
+                .setMinPoolSize(100)
+                .setMaxPoolSize(1000)
+                .setOutOfPoolTimeout(1000)
+                .setBlocking(true)
+                .build();
+
+        BsonMapper bsonMapper = new BsonMapper(poolFactory, 4096, 64, () -> ByteBuffer.allocateDirect(4096));
+        bsonMapper.getBsonObjectReader().setReadBinaryAsByteArray(false);
+
+        // Serialize a document (simulates PING-like small request)
+        VpnRequestDto<VpnForwardPacketDto> request = VpnRequestDto.wrap(FOO, null);
+        request.setTimestamp(Instant.ofEpochMilli(Instant.now().toEpochMilli()));
+
+        DynamicByteBuffer buf = bsonMapper.serialize(request);
+        ByteBuffer rawBuffer = buf.getBuffer();
+
+        // After serialize(): buffer is already in READ mode (flipped internally)
+        assertEquals(0, rawBuffer.position(), "Position should be 0 after serialize (already flipped)");
+        int dataSize = rawBuffer.limit();
+        assertTrue(dataSize > 0, "Serialized data should have non-zero size");
+        assertEquals(dataSize, rawBuffer.remaining(), "Remaining should equal exactly the serialized data size");
+
+        // Verify deserialization works directly without extra flip
+        VpnRequestDto<?> deserialized = bsonMapper.deserialize(rawBuffer, VpnRequestDto.class);
+        assertEquals(request.getCommand(), deserialized.getCommand());
+        assertEquals(request.getTimestamp(), deserialized.getTimestamp());
+        assertNull(deserialized.getData());
+
+        buf.dispose();
+    }
+
+    /**
+     * Verifies that repeated serialize -> flip -> deserialize -> dispose cycles with
+     * alternating large/small documents produce correct results every time.
+     * With pooling, buffers are reused and may contain stale data from previous
+     * serializations - flip() ensures only valid data is read.
+     */
+    @Test
+    public void repeatedPooledSerializationRoundTripTest() {
+        PoolFactory poolFactory = PoolFactory.Builder.builder()
+                .setMinPoolSize(10)
+                .setMaxPoolSize(100)
+                .setOutOfPoolTimeout(1000)
+                .setBlocking(true)
+                .build();
+
+        BsonMapper bsonMapper = new BsonMapper(poolFactory, 4096, 64, () -> ByteBuffer.allocateDirect(4096));
+        bsonMapper.getBsonObjectReader().setReadBinaryAsByteArray(false);
+
+        for (int i = 0; i < 200; i++) {
+            // Alternate between large (FORWARD_PACKET-like) and small (PING-like) documents
+            VpnRequestDto<?> request;
+            if (i % 2 == 0) {
+                ByteBuffer payload = ByteBuffer.allocateDirect(512);
+                for (int j = 0; j < 512; j++) payload.put(j, (byte) (j + i));
+                request = VpnRequestDto.wrap(FOO, VpnForwardPacketDto.builder().packet(payload).build());
+            } else {
+                request = VpnRequestDto.wrap(FOO, null);
+            }
+            request.setTimestamp(Instant.ofEpochMilli(1000000L + i));
+
+            DynamicByteBuffer buf = bsonMapper.serialize(request);
+            VpnRequestDto<?> deserialized = bsonMapper.deserialize(buf.getBuffer(), VpnRequestDto.class);
+
+            assertEquals(request.getCommand(), deserialized.getCommand(), "Command mismatch at iteration " + i);
+            assertEquals(request.getTimestamp(), deserialized.getTimestamp(), "Timestamp mismatch at iteration " + i);
+
+            buf.dispose();
+        }
     }
 
     @Test
@@ -70,6 +147,8 @@ public class BsonMapperTests {
                 .packet(ByteBuffer.allocateDirect(128 * 1024))
                 .build());
 
+        DynamicByteBuffer buf = new DynamicByteBuffer(129 * 1024, true);
+
         // Warm-up phase: allow JIT to optimize hot paths
         System.out.println("Warming up for " + WARMUP_ITERATIONS + " iterations...");
         for (int i = 0; i < WARMUP_ITERATIONS; i++) {
@@ -79,11 +158,9 @@ public class BsonMapperTests {
             }
 
             BinaryDocument documentMap = binder.unbind(requestDto);
-            DynamicByteBuffer b = bsonObjectWriter.serialize(documentMap);
-            b.flip();
+            bsonObjectWriter.serialize(buf, documentMap);
             BinaryDocument deserialized = new BinaryDocument(new HashMap<>());
-            bsonObjectReader.deserialize(b.getBuffer(), deserialized);
-            b.dispose();
+            bsonObjectReader.deserialize(buf.getBuffer(), deserialized);
             binder.bind(VpnRequestDto.class, deserialized);
         }
         System.out.println("Warm-up complete. Running benchmark...");
@@ -102,13 +179,11 @@ public class BsonMapperTests {
 
             BinaryDocument documentMap = binder.unbind(requestDto);
             long delta = System.nanoTime();
-            DynamicByteBuffer b = bsonObjectWriter.serialize(documentMap);
+            bsonObjectWriter.serialize(buf, documentMap);
             serializationTime.add(System.nanoTime() - delta);
-            b.flip();
             delta = System.nanoTime();
             deserialized = new BinaryDocument(new HashMap<>());
-            bsonObjectReader.deserialize(b.getBuffer(), deserialized);
-            b.dispose();
+            bsonObjectReader.deserialize(buf.getBuffer(), deserialized);
             deserializationTime.add(System.nanoTime() - delta);
             request1 = binder.bind(VpnRequestDto.class, deserialized);
 
