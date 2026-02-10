@@ -43,10 +43,10 @@ public class BsonObjectReader {
         }
     }
 
-    public BinaryDocument deserialize(ByteBuffer buffer) {
+    public void deserialize(ByteBuffer buffer, BinaryDocument binaryDocument) {
         buffer.order(ByteOrder.LITTLE_ENDIAN);
 
-        Map<Integer, Object> rootDocument = new HashMap<>();
+        Map<Integer, Object> rootDocument = binaryDocument.getDocumentMap();
         BsonReader bsonReader = new BsonByteBufferReader(buffer, binaryPacketPool);
         ArrayDeque<ReaderContext> stack = stackPool.get();
 
@@ -102,14 +102,13 @@ public class BsonObjectReader {
                 }
             }
 
-            return new BinaryDocument(rootDocument);
         } finally {
             stack.clear();
             stackPool.release(stack);
         }
     }
 
-    public BinaryDocument deserialize(InputStream inputStream) throws IOException {
+    public void deserialize(InputStream inputStream, BinaryDocument binaryDocument) throws IOException {
         byte[] lengthBytes = inputStream.readNBytes(4);
         if (lengthBytes.length != 4) {
             throw new IOException("Unable to read document length");
@@ -130,7 +129,7 @@ public class BsonObjectReader {
             }
 
             ByteBuffer buffer = ByteBuffer.wrap(documentBytes);
-            return deserialize(buffer);
+            deserialize(buffer, binaryDocument);
         } finally {
             packetPool.release(documentBytes);
         }

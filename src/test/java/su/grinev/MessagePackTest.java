@@ -8,10 +8,7 @@ import su.grinev.pool.Pool;
 import su.grinev.pool.PoolFactory;
 
 import java.nio.ByteBuffer;
-import java.util.ArrayDeque;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -42,7 +39,8 @@ public class MessagePackTest {
         buf.flip();
 
         MessagePackReader reader = new MessagePackReader(readerContextPool, stackPool, false, false);
-        BinaryDocument deserialized = reader.deserialize(buf);
+        BinaryDocument deserialized = new BinaryDocument(new HashMap<>());
+        reader.deserialize(buf, deserialized);
 
         assertEquals(42, deserialized.get("0"));
         assertEquals("test", deserialized.get("1"));
@@ -65,7 +63,8 @@ public class MessagePackTest {
         buf.flip();
 
         MessagePackReader reader = new MessagePackReader(readerContextPool, stackPool, false, false);
-        BinaryDocument deserialized = reader.deserialize(buf);
+        BinaryDocument deserialized = new BinaryDocument(new HashMap<>());
+        reader.deserialize(buf, deserialized);
 
         assertEquals(1, deserialized.get("0"));
         assertEquals(2, deserialized.get("1.0"));
@@ -94,7 +93,8 @@ public class MessagePackTest {
         buf.flip();
 
         MessagePackReader reader = new MessagePackReader(readerContextPool, stackPool, false, false);
-        BinaryDocument deserialized = reader.deserialize(buf);
+        BinaryDocument deserialized = new BinaryDocument(new HashMap<>());
+        reader.deserialize(buf, deserialized);
 
         assertNull(deserialized.get("0"));
         assertEquals(true, deserialized.get("1"));
@@ -136,7 +136,8 @@ public class MessagePackTest {
         buf.flip();
 
         MessagePackReader reader = new MessagePackReader(readerContextPool, stackPool, false, false);
-        BinaryDocument deserialized = reader.deserialize(buf);
+        BinaryDocument deserialized = new BinaryDocument(new HashMap<>());
+        reader.deserialize(buf, deserialized);
 
         assertEquals("deep", deserialized.get("0.0.0.0"));
     }
@@ -168,7 +169,8 @@ public class MessagePackTest {
             ByteBuffer buf = result.getBuffer();
             buf.flip();
 
-            BinaryDocument deserialized = reader.deserialize(buf);
+            BinaryDocument deserialized = new BinaryDocument(new HashMap<>());
+            reader.deserialize(buf, deserialized);
             assertEquals(i, deserialized.get("0"));
 
             result.dispose();
@@ -191,7 +193,8 @@ public class MessagePackTest {
         buf.flip();
 
         MessagePackReader reader = new MessagePackReader(readerContextPool, stackPool, false, false);
-        BinaryDocument deserialized = reader.deserialize(buf);
+        BinaryDocument deserialized = new BinaryDocument(new HashMap<>());
+        reader.deserialize(buf, deserialized);
 
         MessagePackExtension ext = (MessagePackExtension) deserialized.get("0");
         assertEquals(1, ext.type());
@@ -282,14 +285,14 @@ public class MessagePackTest {
         // Warmup
         for (int i = 0; i < WARMUP_ITERATIONS; i++) {
             data.rewind();
-            reader.deserialize(data);
+            reader.deserialize(data, new BinaryDocument(new HashMap<>()));
         }
 
         // Measure
         long start = System.nanoTime();
         for (int i = 0; i < MEASURE_ITERATIONS; i++) {
             data.rewind();
-            reader.deserialize(data);
+            reader.deserialize(data, new BinaryDocument(new HashMap<>()));
         }
         long elapsed = System.nanoTime() - start;
 
@@ -329,7 +332,7 @@ public class MessagePackTest {
         for (int i = 0; i < WARMUP_ITERATIONS; i++) {
             DynamicByteBuffer buf = writer.serialize(doc);
             buf.flip();
-            reader.deserialize(buf.getBuffer());
+            reader.deserialize(buf.getBuffer(), new BinaryDocument(new HashMap<>()));
             buf.dispose();
             perfBufferPool.release(buf);
         }
@@ -339,7 +342,7 @@ public class MessagePackTest {
         for (int i = 0; i < MEASURE_ITERATIONS; i++) {
             DynamicByteBuffer buf = writer.serialize(doc);
             buf.flip();
-            reader.deserialize(buf.getBuffer());
+            reader.deserialize(buf.getBuffer(), new BinaryDocument(new HashMap<>()));
             buf.dispose();
             perfBufferPool.release(buf);
         }
@@ -408,14 +411,14 @@ public class MessagePackTest {
         // Warmup deserialize
         for (int i = 0; i < WARMUP_ITERATIONS; i++) {
             data.rewind();
-            reader.deserialize(data);
+            reader.deserialize(data, new BinaryDocument(new HashMap<>()));
         }
 
         // Measure deserialize
         long startDe = System.nanoTime();
         for (int i = 0; i < MEASURE_ITERATIONS; i++) {
             data.rewind();
-            reader.deserialize(data);
+            reader.deserialize(data, new BinaryDocument(new HashMap<>()));
         }
         long elapsedDe = System.nanoTime() - startDe;
 

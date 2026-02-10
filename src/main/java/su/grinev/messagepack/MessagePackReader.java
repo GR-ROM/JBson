@@ -11,7 +11,6 @@ import java.util.*;
 public class MessagePackReader {
 
     private static final int STRING_BUFFER_SIZE = 256;
-    private static final String KEY_MODE = "INT";
     private final Pool<ReaderContext> contextPool;
     private final Pool<ArrayDeque<ReaderContext>> stackPool;
     private final boolean useProjectionsForByteBuffer;
@@ -29,8 +28,8 @@ public class MessagePackReader {
         this.useByteBufferForBinary = useByteBufferForBinary;
     }
 
-    public BinaryDocument deserialize(ByteBuffer buffer) {
-        Map<Integer, Object> root = new HashMap<>();
+    public void deserialize(ByteBuffer buffer, BinaryDocument binaryDocument) {
+        Map<Integer, Object> root = binaryDocument.getDocumentMap();
         ArrayDeque<ReaderContext> stack = stackPool.get();
 
         try {
@@ -72,7 +71,6 @@ public class MessagePackReader {
                 current.reset();
                 contextPool.release(current);
             }
-            return new BinaryDocument(root);
         } finally {
             stack.clear();
             stackPool.release(stack);

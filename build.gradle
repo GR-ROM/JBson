@@ -58,6 +58,9 @@ dependencies {
 
     // Protobuf
     testImplementation 'com.google.protobuf:protobuf-java:3.25.1'
+
+    // LZ4 compression (for benchmarks)
+    testImplementation 'org.lz4:lz4-java:1.8.0'
 }
 
 protobuf {

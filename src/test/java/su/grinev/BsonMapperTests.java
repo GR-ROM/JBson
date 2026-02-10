@@ -11,6 +11,7 @@ import su.grinev.test.VpnRequestDto;
 import java.nio.ByteBuffer;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -80,7 +81,8 @@ public class BsonMapperTests {
             BinaryDocument documentMap = binder.unbind(requestDto);
             DynamicByteBuffer b = bsonObjectWriter.serialize(documentMap);
             b.flip();
-            BinaryDocument deserialized = bsonObjectReader.deserialize(b.getBuffer());
+            BinaryDocument deserialized = new BinaryDocument(new HashMap<>());
+            bsonObjectReader.deserialize(b.getBuffer(), deserialized);
             b.dispose();
             binder.bind(VpnRequestDto.class, deserialized);
         }
@@ -89,7 +91,7 @@ public class BsonMapperTests {
         // Benchmark phase
         List<Long> serializationTime = new ArrayList<>();
         List<Long> deserializationTime = new ArrayList<>();
-        BinaryDocument deserialized = new BinaryDocument(Map.of(), 0);
+        BinaryDocument deserialized = new BinaryDocument(new HashMap<>());
         Object request1;
 
         for (int i = 0; i < BENCHMARK_ITERATIONS; i++) {
@@ -104,7 +106,8 @@ public class BsonMapperTests {
             serializationTime.add(System.nanoTime() - delta);
             b.flip();
             delta = System.nanoTime();
-            deserialized = bsonObjectReader.deserialize(b.getBuffer());
+            deserialized = new BinaryDocument(new HashMap<>());
+            bsonObjectReader.deserialize(b.getBuffer(), deserialized);
             b.dispose();
             deserializationTime.add(System.nanoTime() - delta);
             request1 = binder.bind(VpnRequestDto.class, deserialized);

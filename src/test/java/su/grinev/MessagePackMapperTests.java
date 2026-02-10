@@ -56,7 +56,8 @@ public class MessagePackMapperTests {
 
         DynamicByteBuffer b = writer.serialize(original);
         b.flip();
-        BinaryDocument deserialized = reader.deserialize(b.getBuffer());
+        BinaryDocument deserialized = new BinaryDocument(new HashMap<>());
+        reader.deserialize(b.getBuffer(), deserialized);
         b.dispose();
 
         assertEquals(original.get("0"), deserialized.get("0"));
@@ -104,7 +105,8 @@ public class MessagePackMapperTests {
         for (int i = 0; i < WARMUP_ITERATIONS; i++) {
             DynamicByteBuffer b = writer.serialize(document);
             b.flip();
-            BinaryDocument deserialized = reader.deserialize(b.getBuffer());
+            BinaryDocument deserialized = new BinaryDocument(new HashMap<>());
+            reader.deserialize(b.getBuffer(), deserialized);
             b.dispose();
         }
         System.out.println("Warm-up complete. Running benchmark...");
@@ -121,7 +123,8 @@ public class MessagePackMapperTests {
             b.flip();
 
             delta = System.nanoTime();
-            deserialized = reader.deserialize(b.getBuffer());
+            deserialized = new BinaryDocument(new HashMap<>());
+            reader.deserialize(b.getBuffer(), deserialized);
             deserializationTime.add(System.nanoTime() - delta);
 
             b.dispose();
@@ -190,7 +193,7 @@ public class MessagePackMapperTests {
         for (int i = 0; i < WARMUP_ITERATIONS; i++) {
             DynamicByteBuffer b = writer.serialize(document);
             b.flip();
-            reader.deserialize(b.getBuffer());
+            reader.deserialize(b.getBuffer(), new BinaryDocument(new HashMap<>()));
             b.dispose();
         }
         System.out.println("Warm-up complete. Running benchmark...");
@@ -206,7 +209,8 @@ public class MessagePackMapperTests {
             b.flip();
 
             delta = System.nanoTime();
-            BinaryDocument deserialized = reader.deserialize(b.getBuffer());
+            BinaryDocument deserialized = new BinaryDocument(new HashMap<>());
+            reader.deserialize(b.getBuffer(), deserialized);
             deserializationTime.add(System.nanoTime() - delta);
 
             // Validate ALL deserialized data

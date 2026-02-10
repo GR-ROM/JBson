@@ -15,10 +15,7 @@ import su.grinev.pool.Pool;
 import su.grinev.pool.PoolFactory;
 
 import java.nio.ByteBuffer;
-import java.util.ArrayDeque;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
 
 @BenchmarkMode(Mode.AverageTime)
@@ -131,14 +128,17 @@ public class MessagePackBenchmark {
     @Benchmark
     public BinaryDocument deserialize128kb() {
         serialized128kb.rewind();
-        return messagePackReader.deserialize(serialized128kb);
+        BinaryDocument result = new BinaryDocument(new HashMap<>());
+        messagePackReader.deserialize(serialized128kb, result);
+        return result;
     }
 
     @Benchmark
     public BinaryDocument roundtrip128kb() {
         DynamicByteBuffer buffer = messagePackWriter.serialize(document128kb);
         buffer.flip();
-        BinaryDocument result = messagePackReader.deserialize(buffer.getBuffer());
+        BinaryDocument result = new BinaryDocument(new HashMap<>());
+        messagePackReader.deserialize(buffer.getBuffer(), result);
         buffer.dispose();
         bufferPool.release(buffer);
         return result;
@@ -158,14 +158,17 @@ public class MessagePackBenchmark {
     @Benchmark
     public BinaryDocument deserializeManyFields() {
         manyFieldsSerialized.rewind();
-        return messagePackReader.deserialize(manyFieldsSerialized);
+        BinaryDocument result = new BinaryDocument(new HashMap<>());
+        messagePackReader.deserialize(manyFieldsSerialized, result);
+        return result;
     }
 
     @Benchmark
     public BinaryDocument roundtripManyFields() {
         DynamicByteBuffer buffer = messagePackWriter.serialize(manyFieldsDocument);
         buffer.flip();
-        BinaryDocument result = messagePackReader.deserialize(buffer.getBuffer());
+        BinaryDocument result = new BinaryDocument(new HashMap<>());
+        messagePackReader.deserialize(buffer.getBuffer(), result);
         buffer.dispose();
         bufferPool.release(buffer);
         return result;
@@ -185,14 +188,17 @@ public class MessagePackBenchmark {
     @Benchmark
     public BinaryDocument deserializeSimple() {
         simpleSerialized.rewind();
-        return messagePackReader.deserialize(simpleSerialized);
+        BinaryDocument result = new BinaryDocument(new HashMap<>());
+        messagePackReader.deserialize(simpleSerialized, result);
+        return result;
     }
 
     @Benchmark
     public BinaryDocument roundtripSimple() {
         DynamicByteBuffer buffer = messagePackWriter.serialize(simpleDocument);
         buffer.flip();
-        BinaryDocument result = messagePackReader.deserialize(buffer.getBuffer());
+        BinaryDocument result = new BinaryDocument(new HashMap<>());
+        messagePackReader.deserialize(buffer.getBuffer(), result);
         buffer.dispose();
         bufferPool.release(buffer);
         return result;

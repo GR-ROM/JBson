@@ -37,12 +37,14 @@ public class BsonMapper {
     }
 
     public <T> T deserialize(ByteBuffer buffer, Class<T> tClass) {
-        BinaryDocument document = bsonObjectReader.deserialize(buffer);
+        BinaryDocument document = new BinaryDocument(new java.util.HashMap<>());
+        bsonObjectReader.deserialize(buffer, document);
         return readerBinder.bind(tClass, document);
     }
 
     public <T> T deserialize(InputStream inputStream, Class<T> tClass) throws IOException {
-        BinaryDocument document = bsonObjectReader.deserialize(inputStream);
+        BinaryDocument document = new BinaryDocument(new java.util.HashMap<>());
+        bsonObjectReader.deserialize(inputStream, document);
         return readerBinder.bind(tClass, document);
     }
 }

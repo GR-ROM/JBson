@@ -5,7 +5,13 @@
       "Bash(cargo test:*)",
       "Bash(./gradlew jmh:*)",
       "Bash(cargo bench:*)",
-      "Bash(./gradlew test:*)"
+      "Bash(./gradlew test:*)",
+      "Bash(./gradlew generateTestProto:*)",
+      "Bash(./gradlew:*)",
+      "Bash(.\\\\gradlew.bat test:*)",
+      "Bash(cmd /c:*)",
+      "Bash(./gradlew.bat test:*)",
+      "Bash(git stash:*)"
     ]
   }
 }
