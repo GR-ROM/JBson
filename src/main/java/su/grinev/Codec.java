@@ -1,5 +1,6 @@
 package su.grinev;
 
+import lombok.Getter;
 import su.grinev.bson.BsonObjectReader;
 import su.grinev.bson.BsonObjectWriter;
 import su.grinev.messagepack.MessagePackReader;
@@ -18,6 +19,7 @@ import java.nio.ByteBuffer;
 import java.util.ArrayDeque;
 import java.util.function.Supplier;
 
+@Getter
 public class Codec {
     private final Binder writerBinder = new Binder();
     private final Binder readerBinder = new Binder();
