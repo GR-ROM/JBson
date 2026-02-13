@@ -1,6 +1,7 @@
 package su.grinev.messagepack;
 
 import su.grinev.BinaryDocument;
+import su.grinev.Serializer;
 import su.grinev.pool.DynamicByteBuffer;
 import su.grinev.pool.Pool;
 
@@ -12,7 +13,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 
-public class MessagePackWriter {
+public class MessagePackWriter implements Serializer {
     private final Pool<WriterContext> contextPool;
     private final Map<Integer, byte[]> keyCache = new HashMap<>();
 

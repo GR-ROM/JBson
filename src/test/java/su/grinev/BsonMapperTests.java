@@ -29,8 +29,7 @@ public class BsonMapperTests {
                 .setBlocking(true)
                 .build();
 
-        BsonMapper bsonMapper = new BsonMapper(poolFactory, 4096, 64, () -> ByteBuffer.allocateDirect(4096));
-        bsonMapper.getBsonObjectReader().setReadBinaryAsByteArray(false);
+        Codec codec = Codec.bson(poolFactory, 4096, () -> ByteBuffer.allocateDirect(4096), false);
         VpnRequestDto<VpnForwardPacketDto> vpnRequestDto = VpnRequestDto.wrap(FOO, VpnForwardPacketDto.builder()
                 .packet(ByteBuffer.allocateDirect(1024))
                 .build());
@@ -41,15 +40,15 @@ public class BsonMapperTests {
 
         vpnRequestDto.setTimestamp(Instant.ofEpochMilli(Instant.now().toEpochMilli()));
 
-        DynamicByteBuffer b = bsonMapper.serialize(vpnRequestDto);
-        VpnRequestDto<?> deserialized = bsonMapper.deserialize(b.getBuffer(), VpnRequestDto.class);
+        DynamicByteBuffer b = codec.serialize(vpnRequestDto);
+        VpnRequestDto<?> deserialized = codec.deserialize(b.getBuffer(), VpnRequestDto.class);
 
         b.dispose();
         assertEquals(vpnRequestDto, deserialized);
     }
 
     /**
-     * Verifies that BsonMapper.serialize() returns a buffer already flipped in read mode.
+     * Verifies that Codec.serialize() returns a buffer already flipped in read mode.
      * The serialize method now calls flip() internally, so the caller can read immediately.
      */
     @Test
@@ -61,14 +60,13 @@ public class BsonMapperTests {
                 .setBlocking(true)
                 .build();
 
-        BsonMapper bsonMapper = new BsonMapper(poolFactory, 4096, 64, () -> ByteBuffer.allocateDirect(4096));
-        bsonMapper.getBsonObjectReader().setReadBinaryAsByteArray(false);
+        Codec codec = Codec.bson(poolFactory, 4096, () -> ByteBuffer.allocateDirect(4096), false);
 
         // Serialize a document (simulates PING-like small request)
         VpnRequestDto<VpnForwardPacketDto> request = VpnRequestDto.wrap(FOO, null);
         request.setTimestamp(Instant.ofEpochMilli(Instant.now().toEpochMilli()));
 
-        DynamicByteBuffer buf = bsonMapper.serialize(request);
+        DynamicByteBuffer buf = codec.serialize(request);
         ByteBuffer rawBuffer = buf.getBuffer();
 
         // After serialize(): buffer is already in READ mode (flipped internally)
@@ -78,7 +76,7 @@ public class BsonMapperTests {
         assertEquals(dataSize, rawBuffer.remaining(), "Remaining should equal exactly the serialized data size");
 
         // Verify deserialization works directly without extra flip
-        VpnRequestDto<?> deserialized = bsonMapper.deserialize(rawBuffer, VpnRequestDto.class);
+        VpnRequestDto<?> deserialized = codec.deserialize(rawBuffer, VpnRequestDto.class);
         assertEquals(request.getCommand(), deserialized.getCommand());
         assertEquals(request.getTimestamp(), deserialized.getTimestamp());
         assertNull(deserialized.getData());
@@ -101,8 +99,7 @@ public class BsonMapperTests {
                 .setBlocking(true)
                 .build();
 
-        BsonMapper bsonMapper = new BsonMapper(poolFactory, 4096, 64, () -> ByteBuffer.allocateDirect(4096));
-        bsonMapper.getBsonObjectReader().setReadBinaryAsByteArray(false);
+        Codec codec = Codec.bson(poolFactory, 4096, () -> ByteBuffer.allocateDirect(4096), false);
 
         for (int i = 0; i < 200; i++) {
             // Alternate between large (FORWARD_PACKET-like) and small (PING-like) documents
@@ -116,8 +113,8 @@ public class BsonMapperTests {
             }
             request.setTimestamp(Instant.ofEpochMilli(1000000L + i));
 
-            DynamicByteBuffer buf = bsonMapper.serialize(request);
-            VpnRequestDto<?> deserialized = bsonMapper.deserialize(buf.getBuffer(), VpnRequestDto.class);
+            DynamicByteBuffer buf = codec.serialize(request);
+            VpnRequestDto<?> deserialized = codec.deserialize(buf.getBuffer(), VpnRequestDto.class);
 
             assertEquals(request.getCommand(), deserialized.getCommand(), "Command mismatch at iteration " + i);
             assertEquals(request.getTimestamp(), deserialized.getTimestamp(), "Timestamp mismatch at iteration " + i);

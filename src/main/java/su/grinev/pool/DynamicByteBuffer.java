@@ -6,7 +6,7 @@ import java.nio.ByteOrder;
 public class DynamicByteBuffer implements Disposable {
     private Runnable onDispose;
     private ByteBuffer buffer;
-    private boolean direct;
+    private final boolean direct;
 
     public DynamicByteBuffer(int capacity, boolean direct) {
         this.direct = direct;

@@ -1,6 +1,7 @@
 package su.grinev.bson;
 
 import su.grinev.BinaryDocument;
+import su.grinev.Serializer;
 import su.grinev.pool.DisposablePool;
 import su.grinev.pool.DynamicByteBuffer;
 import su.grinev.pool.Pool;
@@ -22,7 +23,7 @@ import static su.grinev.bson.Utility.encodeDecimal128;
 import static su.grinev.bson.WriterContext.fillForArray;
 import static su.grinev.bson.WriterContext.fillForDocument;
 
-public class BsonObjectWriter {
+public class BsonObjectWriter implements Serializer {
 
     private static final byte[][] INDEX_BYTES = new byte[1024][];
     static {

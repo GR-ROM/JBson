@@ -3,6 +3,7 @@ package su.grinev.bson;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import su.grinev.BinaryDocument;
+import su.grinev.Deserializer;
 import su.grinev.exception.BsonException;
 import su.grinev.pool.Pool;
 import su.grinev.pool.PoolFactory;
@@ -16,7 +17,7 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 
 @Slf4j
-public class BsonObjectReader {
+public class BsonObjectReader implements Deserializer {
     private final Pool<ReaderContext> contextPool;
     private final Pool<byte[]> packetPool;
     private final Pool<ArrayDeque<ReaderContext>> stackPool;
