@@ -159,7 +159,7 @@ public class Binder {
     }
 
     public BinaryDocument unbind(Object o) {
-        Map<Integer, Object> rootDocument = new HashMap<>();
+        Map<Object, Object> rootDocument = new HashMap<>();
         ArrayDeque<BinderContext> stack = new ArrayDeque<>();
         stack.addLast(new BinderContext(o, rootDocument, o.getClass()));
 

@@ -5,14 +5,21 @@ import java.util.Map;
 
 public class WriterContext {
 
-    public Iterator<Map.Entry<Integer, Object>> objectMap;
+    public Iterator<Map.Entry<Object, Object>> objectMap;
+    public Iterator<Object> array;
 
-    public WriterContext init(Iterator<Map.Entry<Integer, Object>> objectMap) {
+    public WriterContext initMap(Iterator<Map.Entry<Object, Object>> objectMap) {
         this.objectMap = objectMap;
         return this;
     }
 
+    public WriterContext initList(Iterator<Object> arrayMap) {
+        this.array = arrayMap;
+        return this;
+    }
+
     public void reset() {
-        this.objectMap = null;
+        objectMap = null;
+        array = null;
     }
 }

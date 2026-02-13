@@ -91,7 +91,7 @@ public class BsonObjectWriter implements Serializer {
                     byte[] indexBytes = getIndexBytes(index);
                     writeValueWithArrayKey(buffer, stack, value, indexBytes);
                 } else {
-                    Map.Entry<Integer, Object> entry = ctx.mapIterator.next();
+                    Map.Entry<Object, Object> entry = ctx.mapIterator.next();
                     String key = entry.getKey().toString();
                     Object value = entry.getValue();
                     if (value == null) value = WriterContext.NullObject.INSTANCE;

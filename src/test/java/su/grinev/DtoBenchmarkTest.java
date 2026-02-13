@@ -1,5 +1,9 @@
 package su.grinev;
 
+import com.google.protobuf.ByteString;
+import net.jpountz.lz4.LZ4Compressor;
+import net.jpountz.lz4.LZ4Factory;
+import net.jpountz.lz4.LZ4FastDecompressor;
 import org.junit.jupiter.api.Test;
 import su.grinev.bson.BsonObjectReader;
 import su.grinev.bson.BsonObjectWriter;
@@ -20,21 +24,15 @@ import su.grinev.proto.PayloadProto;
 import su.grinev.test.VpnForwardPacketDto;
 import su.grinev.test.VpnRequestDto;
 
-import static su.grinev.test.Command.FOO;
-
-import com.google.protobuf.ByteString;
-import net.jpountz.lz4.LZ4Compressor;
-import net.jpountz.lz4.LZ4Factory;
-import net.jpountz.lz4.LZ4FastDecompressor;
-
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.nio.ByteBuffer;
-import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
+
+import static su.grinev.test.Command.FOO;
 
 public class DtoBenchmarkTest {
 
@@ -817,7 +815,7 @@ public class DtoBenchmarkTest {
      *   BlockingsInfoCacheableDto: authorityName=0, blockAmount=1, blockReason=2, blockType=3, date=4, number=5
      */
     private BinaryDocument dtoToBinaryDocument(GetBlockingsInfoResultCacheableDto dto) {
-        Map<Integer, Object> root = new HashMap<>();
+        Map<Object, Object> root = new HashMap<>();
         root.put(2, dto.getCustomerId());
         root.put(0, dto.getAccountNumber());
 

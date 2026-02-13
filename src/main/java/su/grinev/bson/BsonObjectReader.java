@@ -47,7 +47,7 @@ public class BsonObjectReader implements Deserializer {
     public void deserialize(ByteBuffer buffer, BinaryDocument binaryDocument) {
         buffer.order(ByteOrder.LITTLE_ENDIAN);
 
-        Map<Integer, Object> rootDocument = binaryDocument.getDocumentMap();
+        Map<Object, Object> rootDocument = binaryDocument.getDocumentMap();
         BsonReader bsonReader = new BsonByteBufferReader(buffer, binaryPacketPool);
         ArrayDeque<ReaderContext> stack = stackPool.get();
 

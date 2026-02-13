@@ -18,7 +18,7 @@ import java.util.*;
 public class MessagePackWriter implements Serializer {
     private final Pool<WriterContext> contextPool;
     private final Pool<ArrayDeque<WriterContext>> stackPool;
-    private final Map<Integer, byte[]> keyCache = new HashMap<>();
+    private final Map<String, byte[]> keyCache = new HashMap<>();
     @Setter
     @Getter
     private boolean writeLengthHeader;
@@ -35,11 +35,11 @@ public class MessagePackWriter implements Serializer {
         if (writeLengthHeader) {
             buffer.putInt(0);
         }
-        Map<Integer, Object> documentMap = document.getDocumentMap();
+        Map<Object, Object> documentMap = document.getDocumentMap();
         ArrayDeque<WriterContext> stack = stackPool.get();
 
         try {
-            stack.push(contextPool.get().init(documentMap.entrySet().iterator()));
+            stack.push(contextPool.get().initMap(documentMap.entrySet().iterator()));
 
             writeMapHeader(buffer, documentMap.size());
 
@@ -47,25 +47,29 @@ public class MessagePackWriter implements Serializer {
                 WriterContext context = stack.getFirst();
                 int stackSize = stack.size();
 
-                while (context.objectMap.hasNext()) {
-                    Map.Entry<Integer, Object> entry = context.objectMap.next();
-                    //writeString(buffer, entry.getKey());
-                    writeInt(buffer, entry.getKey());
-
-                    Object value = entry.getValue();
-                    if (value instanceof Map map) {
-                        writeMapHeader(buffer, map.size());
-                        stack.push(contextPool.get().init(map.entrySet().iterator()));
-                        break;
-                    } else {
-                        writeValue(buffer, value);
+                if (context.objectMap != null) {
+                    while (context.objectMap.hasNext() && stack.size() == stackSize) {
+                        Map.Entry<Object, Object> objectEntry = context.objectMap.next();
+                        if (objectEntry.getKey() instanceof String s) {
+                                byte[] keyBytes = keyCache.computeIfAbsent(s, k -> s.getBytes(StandardCharsets.UTF_8));
+                                doWriteString(buffer, keyBytes);
+                            } else {
+                                writeValue(stack, buffer, objectEntry.getKey());
+                            }
+                            Object value = objectEntry.getValue();
+                            writeValue(stack, buffer, value);
+                    }
+                } else {
+                    while (context.array.hasNext() && stack.size() == stackSize) {
+                        Object value = context.array.next();
+                        writeValue(stack, buffer, value);
                     }
                 }
 
                 if (stack.size() == stackSize) {
                     WriterContext ctx = stack.removeFirst();
-                    ctx.reset();
                     contextPool.release(ctx);
+                    ctx.reset();
                 }
             }
 
@@ -105,7 +109,7 @@ public class MessagePackWriter implements Serializer {
     }
 
     @SuppressWarnings("unchecked")
-    private void writeValue(DynamicByteBuffer buffer, Object value) {
+    private void writeValue(ArrayDeque<WriterContext> stack, DynamicByteBuffer buffer, Object value) {
         switch (value) {
             case null -> buffer.put((byte) 0xC0);
             case Boolean b -> buffer.put(b ? (byte) 0xC3 : (byte) 0xC2);
@@ -118,17 +122,13 @@ public class MessagePackWriter implements Serializer {
             case ByteBuffer bb -> writeBinary(buffer, bb);
             case List list -> {
                 writeArrayHeader(buffer, list.size());
-                for (Object item : list) {
-                    writeValue(buffer, item);
-                }
+                WriterContext writerContext = contextPool.get().initList(list.iterator());
+                stack.push(writerContext);
             }
             case Map map -> {
                 writeMapHeader(buffer, map.size());
-                for (Object e : map.entrySet()) {
-                    Map.Entry<Integer, Object> entry = (Map.Entry<Integer, Object>) e;
-                    writeInt(buffer, entry.getKey());
-                    writeValue(buffer, entry.getValue());
-                }
+                WriterContext writerContext = contextPool.get().initMap(map.entrySet().iterator());
+                stack.push(writerContext);
             }
             case MessagePackExtension ext -> writeExtension(buffer, ext);
             case Instant inst -> writeTimestamp(buffer, inst);
@@ -138,25 +138,34 @@ public class MessagePackWriter implements Serializer {
     }
 
     private void writeInt(DynamicByteBuffer buffer, int value) {
-        if (value >= 0 && value <= 127) {
-            buffer.put((byte) value);
-        } else if (value >= -32 && value < 0) {
-            buffer.put((byte) value);
-        } else if (value >= Byte.MIN_VALUE && value <= Byte.MAX_VALUE) {
-            buffer.put((byte) 0xD0);
-            buffer.put((byte) value);
-        } else if (value >= Short.MIN_VALUE && value <= Short.MAX_VALUE) {
-            buffer.put((byte) 0xD1);
-            buffer.putShort((short) value);
+        if (value >= 0) {
+            if (value <= 0x7F) {
+                buffer.put((byte) value);                       // positive fixint
+            } else if (value <= 0xFF) {
+                buffer.put((byte) 0xCC).put((byte) value);     // uint8
+            } else if (value <= 0xFFFF) {
+                buffer.put((byte) 0xCD).putShort((short) value); // uint16
+            } else {
+                buffer.put((byte) 0xCE).putInt(value);          // uint32
+            }
         } else {
-            buffer.put((byte) 0xD2);
-            buffer.putInt(value);
+            if (value >= -32) {
+                buffer.put((byte) value);                       // negative fixint
+            } else if (value >= -128) {
+                buffer.put((byte) 0xD0).put((byte) value);     // int8
+            } else if (value >= -32768) {
+                buffer.put((byte) 0xD1).putShort((short) value); // int16
+            } else {
+                buffer.put((byte) 0xD2).putInt(value);          // int32
+            }
         }
     }
 
     private void writeLong(DynamicByteBuffer buffer, long value) {
         if (value >= Integer.MIN_VALUE && value <= Integer.MAX_VALUE) {
             writeInt(buffer, (int) value);
+        } else if (value > 0 && value <= 0xFFFFFFFFL) {
+            buffer.put((byte) 0xCE).putInt((int) value);       // uint32
         } else {
             buffer.put((byte) 0xD3).putLong(value);
         }
@@ -164,7 +173,11 @@ public class MessagePackWriter implements Serializer {
 
     private void writeString(DynamicByteBuffer buffer, String value) {
         byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
-        int len = bytes.length;
+        doWriteString(buffer, bytes);
+    }
+
+    private void doWriteString(DynamicByteBuffer buffer, byte[] stringBytes) {
+        int len = stringBytes.length;
         if (len < 32) {
             buffer.put((byte) (0xA0 | len));
         } else if (len < 256) {
@@ -174,7 +187,7 @@ public class MessagePackWriter implements Serializer {
         } else {
             buffer.put((byte) 0xDB).putInt(len);
         }
-        buffer.put(bytes);
+        buffer.put(stringBytes);
     }
 
     private void writeBinary(DynamicByteBuffer buffer, byte[] bytes) {
@@ -219,8 +232,7 @@ public class MessagePackWriter implements Serializer {
                 }
             }
         }
-        buffer.put(ext.type())
-                .put(ext.data());
+        buffer.put(ext.type()).put(ext.data());
     }
 
     private void writeTimestamp(DynamicByteBuffer buffer, Instant instant) {

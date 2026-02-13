@@ -5,15 +5,15 @@ import java.util.Map;
 
 public class ReaderContext {
 
-    public Map<Integer, Object> objectMap;
-    public List<Object> objectList;
+    public Map<Object, Object> objectMap;
+    public List<Object> array;
     public boolean isArray;
     public int size;
     public int index;
 
-    public ReaderContext initMap(Map<Integer, Object> objectMap, int size) {
+    public ReaderContext initMap(Map<Object, Object> objectMap, int size) {
         this.objectMap = objectMap;
-        this.objectList = null;
+        this.array = null;
         this.isArray = false;
         this.size = size;
         this.index = 0;
@@ -22,7 +22,7 @@ public class ReaderContext {
 
     public ReaderContext initArray(List<Object> objectList, int size) {
         this.objectMap = null;
-        this.objectList = objectList;
+        this.array = objectList;
         this.isArray = true;
         this.size = size;
         this.index = 0;
@@ -31,6 +31,7 @@ public class ReaderContext {
 
     public void reset() {
         this.objectMap = null;
+        this.array = null;
         this.size = 0;
         this.index = 0;
     }

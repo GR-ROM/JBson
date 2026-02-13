@@ -43,47 +43,46 @@ public class MessagePackReader implements Deserializer {
             length = buffer.getInt();
         }
 
-        Map<Integer, Object> root = binaryDocument.getDocumentMap();
+        Map<Object, Object> root = binaryDocument.getDocumentMap();
         ArrayDeque<ReaderContext> stack = stackPool.get();
 
         try {
             int rootSize = getMapSize(buffer);
             stack.addFirst(contextPool.get().initMap(root, rootSize));
 
-            outer:
             while (!stack.isEmpty()) {
                 ReaderContext current = stack.getFirst();
                 int stackSize = stack.size();
 
                 if (!current.isArray) {
-                    Map<Integer, Object> map = current.objectMap;
+                    Map<Object, Object> map = current.objectMap;
                     while (current.index < current.size) {
                         current.index++;
-                        //String key = readKeyString(buffer);
-                        int key = readInt(buffer);
-
+                        Object key = readValue(buffer, null);
                         Object value = readValue(buffer, stack);
                         map.put(key, value);
 
                         if (stack.size() > stackSize) {
-                            continue outer;
+                            break;
                         }
                     }
-                } else {List<Object> list = current.objectList;
+                } else {List<Object> list = current.array;
                     while (current.index < current.size) {
                         current.index++;
                         Object value = readValue(buffer, stack);
                         list.add(value);
 
                         if (stack.size() > stackSize) {
-                            continue outer;
+                            break;
                         }
                     }
                 }
 
-                stack.removeFirst();
-                current.reset();
-                contextPool.release(current);
+                if (stack.size() == stackSize) {
+                    stack.removeFirst();
+                    current.reset();
+                    contextPool.release(current);
+                }
             }
         } finally {
             stack.clear();
@@ -118,8 +117,10 @@ public class MessagePackReader implements Deserializer {
 
         if (unsigned <= 0x8F) {
             // Fixmap: 0x80-0x8F - push to stack
+            Objects.requireNonNull(stack, "Map cannot be used as key");
+
             int size = unsigned & 0x0F;
-            Map<Integer, Object> map = new HashMap<>(size + size / 3 + 1);
+            Map<Object, Object> map = new HashMap<>(size);
             stack.addFirst(contextPool.get().initMap(map, size));
             return map;
         }
@@ -131,6 +132,7 @@ public class MessagePackReader implements Deserializer {
 
         if (unsigned <= 0x9F) {
             // Fixarray: 0x90-0x9F - push to stack
+            Objects.requireNonNull(stack, "List cannot be used as key");
             int size = unsigned & 0x0F;
             List<Object> list = new ArrayList<>(size);
             if (size > 0) {
@@ -177,13 +179,17 @@ public class MessagePackReader implements Deserializer {
         };
     }
 
-    private Map<Integer, Object> readMap(ArrayDeque<ReaderContext> stack, int size) {
-        Map<Integer, Object> map = new HashMap<>(size + size / 3 + 1);
+    private Map<Object, Object> readMap(ArrayDeque<ReaderContext> stack, int size) {
+        Objects.requireNonNull(stack, "Map cannot be used as key");
+
+        Map<Object, Object> map = new HashMap<>(size + size / 3 + 1);
         stack.addFirst(contextPool.get().initMap(map, size));
         return map;
     }
 
     private List<Object> readArray(ArrayDeque<ReaderContext> stack, int size) {
+        Objects.requireNonNull(stack, "List cannot be used as key");
+
         List<Object> list = new ArrayList<>(size);
         stack.addFirst(contextPool.get().initArray(list, size));
         return list;
@@ -264,31 +270,5 @@ public class MessagePackReader implements Deserializer {
             return buffer.getInt();
         }
         throw new MessagePackException("Unexpected type 0x" + Integer.toHexString(unsigned));
-    }
-
-    private int readInt(ByteBuffer buffer) {
-        int b = buffer.get() & 0xFF;
-        // positive fixint (0xxxxxxx)
-        if ((b & 0x80) == 0) {
-            return b;
-        }
-        // negative fixint (111xxxxx)
-        if ((b & 0xE0) == 0xE0) {
-            return (byte) b;
-        }
-        return switch (b) {
-            case 0xD0 -> buffer.get();
-            case 0xD1 -> buffer.getShort();
-            case 0xD2 -> buffer.getInt();
-            case 0xD3 -> {
-                long v = buffer.getLong();
-                if (v < Integer.MIN_VALUE || v > Integer.MAX_VALUE) {
-                    throw new MessagePackException("int64 overflow: " + v);
-                }
-                yield (int) v;
-            }
-
-            default -> throw new MessagePackException("Unknown byte 0x" + Integer.toHexString(b));
-        };
     }
 }

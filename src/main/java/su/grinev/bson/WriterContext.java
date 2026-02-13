@@ -16,7 +16,7 @@ public final class WriterContext {
     int startPos = -1;  // -1 means uninitialized
 
     // For documents: iterator over map entries
-    Iterator<Map.Entry<Integer, Object>> mapIterator;
+    Iterator<Map.Entry<Object, Object>> mapIterator;
 
     // For arrays: list and current index
     List<Object> arrayList;
@@ -27,7 +27,7 @@ public final class WriterContext {
     public static WriterContext fillForDocument(
             WriterContext writerContext,
             int lengthPos,
-            Map<Integer, Object> value
+            Map<Object, Object> value
     ) {
         writerContext.lengthPos = lengthPos;
         writerContext.mapIterator = value.entrySet().iterator();

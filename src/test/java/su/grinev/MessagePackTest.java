@@ -30,7 +30,7 @@ public class MessagePackTest {
     public void serializeSimpleMap() {
         MessagePackWriter writer = new MessagePackWriter(writerContextPool, writerStackPool);
 
-        Map<Integer, Object> map = new HashMap<>();
+        Map<Object, Object> map = new HashMap<>();
         map.put(0, 42);
         map.put(1, "test");
 
@@ -50,11 +50,11 @@ public class MessagePackTest {
     public void serializeNestedMap() {
         MessagePackWriter writer = new MessagePackWriter(writerContextPool, writerStackPool);
 
-        Map<Integer, Object> nested = new HashMap<>();
+        Map<Object, Object> nested = new HashMap<>();
         nested.put(0, 2);
         nested.put(1, true);
 
-        Map<Integer, Object> root = new HashMap<>();
+        Map<Object, Object> root = new HashMap<>();
         root.put(0, 1);
         root.put(1, nested);
 
@@ -76,7 +76,7 @@ public class MessagePackTest {
     public void serializeComplexObject() {
         MessagePackWriter writer = new MessagePackWriter(writerContextPool, writerStackPool);
 
-        Map<Integer, Object> map = new HashMap<>();
+        Map<Object, Object> map = new HashMap<>();
         map.put(0, null);
         map.put(1, true);
         map.put(2, 42);
@@ -119,16 +119,16 @@ public class MessagePackTest {
     public void serializeDeeplyNestedMaps() {
         MessagePackWriter writer = new MessagePackWriter(writerContextPool, writerStackPool);
 
-        Map<Integer, Object> level3 = new HashMap<>();
+        Map<Object, Object> level3 = new HashMap<>();
         level3.put(0, "deep");
 
-        Map<Integer, Object> level2 = new HashMap<>();
+        Map<Object, Object> level2 = new HashMap<>();
         level2.put(0, level3);
 
-        Map<Integer, Object> level1 = new HashMap<>();
+        Map<Object, Object> level1 = new HashMap<>();
         level1.put(0, level2);
 
-        Map<Integer, Object> root = new HashMap<>();
+        Map<Object, Object> root = new HashMap<>();
         root.put(0, level1);
 
         DynamicByteBuffer buffer = new DynamicByteBuffer(129 * 1024, true);
@@ -163,7 +163,7 @@ public class MessagePackTest {
 
         // Run multiple serialization/deserialization cycles
         for (int i = 0; i < 10; i++) {
-            Map<Integer, Object> map = new HashMap<>();
+            Map<Object, Object> map = new HashMap<>();
             map.put(0, i);
             map.put(1, Map.of(0, i * 2));
 
@@ -183,7 +183,7 @@ public class MessagePackTest {
     public void serializeExtension() {
         MessagePackWriter writer = new MessagePackWriter(writerContextPool, writerStackPool);
 
-        Map<Integer, Object> map = new HashMap<>();
+        Map<Object, Object> map = new HashMap<>();
         map.put(0, new MessagePackExtension((byte) 1, new byte[]{0x01, 0x02, 0x03, 0x04}));
 
         DynamicByteBuffer buffer = new DynamicByteBuffer(129 * 1024, true);
@@ -204,7 +204,7 @@ public class MessagePackTest {
         MessagePackWriter writer = new MessagePackWriter(writerContextPool, writerStackPool);
         Instant now = Instant.now();
 
-        Map<Integer, Object> map = new HashMap<>();
+        Map<Object, Object> map = new HashMap<>();
         map.put(0, now);
 
         DynamicByteBuffer buffer = new DynamicByteBuffer(129 * 1024, true);
@@ -223,7 +223,7 @@ public class MessagePackTest {
         MessagePackWriter writer = new MessagePackWriter(writerContextPool, writerStackPool);
         Instant ts = Instant.ofEpochSecond(1000000);
 
-        Map<Integer, Object> map = new HashMap<>();
+        Map<Object, Object> map = new HashMap<>();
         map.put(0, ts);
 
         DynamicByteBuffer buffer = new DynamicByteBuffer(129 * 1024, true);
@@ -242,7 +242,7 @@ public class MessagePackTest {
         MessagePackWriter writer = new MessagePackWriter(writerContextPool, writerStackPool);
         Instant ts = Instant.ofEpochSecond(-1, 500000000);
 
-        Map<Integer, Object> map = new HashMap<>();
+        Map<Object, Object> map = new HashMap<>();
         map.put(0, ts);
 
         DynamicByteBuffer buffer = new DynamicByteBuffer(129 * 1024, true);
@@ -261,7 +261,7 @@ public class MessagePackTest {
         MessagePackWriter writer = new MessagePackWriter(writerContextPool, writerStackPool);
         Instant ts = Instant.EPOCH;
 
-        Map<Integer, Object> map = new HashMap<>();
+        Map<Object, Object> map = new HashMap<>();
         map.put(0, ts);
 
         DynamicByteBuffer buffer = new DynamicByteBuffer(129 * 1024, true);
@@ -296,7 +296,7 @@ public class MessagePackTest {
         byte[] payload = new byte[128 * 1024];
         for (int i = 0; i < payload.length; i++) payload[i] = (byte) (i % 128);
 
-        Map<Integer, Object> map = new HashMap<>();
+        Map<Object, Object> map = new HashMap<>();
         map.put(0, "FORWARD");
         map.put(1, 12345L);
         map.put(2, payload);
@@ -342,7 +342,7 @@ public class MessagePackTest {
         byte[] payload = new byte[128 * 1024];
         for (int i = 0; i < payload.length; i++) payload[i] = (byte) (i % 128);
 
-        Map<Integer, Object> map = new HashMap<>();
+        Map<Object, Object> map = new HashMap<>();
         map.put(0, "FORWARD");
         map.put(1, 12345L);
         map.put(2, payload);
@@ -392,7 +392,7 @@ public class MessagePackTest {
         byte[] payload = new byte[128 * 1024];
         for (int i = 0; i < payload.length; i++) payload[i] = (byte) (i % 128);
 
-        Map<Integer, Object> map = new HashMap<>();
+        Map<Object, Object> map = new HashMap<>();
         map.put(0, "FORWARD");
         map.put(1, 12345L);
         map.put(2, payload);
@@ -438,9 +438,9 @@ public class MessagePackTest {
         MessagePackReader reader = new MessagePackReader(perfReaderPool, perfStackPool, false, false);
 
         // 1000 nested objects
-        Map<Integer, Object> fields = new HashMap<>();
+        Map<Object, Object> fields = new HashMap<>();
         for (int i = 0; i < 1000; i++) {
-            Map<Integer, Object> nested = new HashMap<>();
+            Map<Object, Object> nested = new HashMap<>();
             nested.put(0, i);
             nested.put(1, "item_" + i);
             nested.put(2, i % 2 == 0);

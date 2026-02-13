@@ -60,7 +60,7 @@ public class MessagePackBenchmark {
             largePayload[i] = (byte) (i % 128);
         }
 
-        Map<Integer, Object> payload128kb = new HashMap<>();
+        Map<Object, Object> payload128kb = new HashMap<>();
         payload128kb.put(0, "FORWARD_PACKET");
         payload128kb.put(1, 12345L);
         payload128kb.put(2, System.currentTimeMillis());
@@ -77,7 +77,7 @@ public class MessagePackBenchmark {
         bufferPool.release(buffer);
 
         // Setup many fields benchmark - 1000 nested objects
-        Map<Integer, Object> fields = new HashMap<>();
+        Map<Object, Object> fields = new HashMap<>();
         for (int i = 0; i < 1000; i++) {
             Map<Integer, Object> nested = new HashMap<>();
             nested.put(0, i);
@@ -99,7 +99,7 @@ public class MessagePackBenchmark {
         bufferPool.release(manyFieldsBuffer);
 
         // Setup simple document benchmark
-        Map<Integer, Object> simple = new HashMap<>();
+        Map<Object, Object> simple = new HashMap<>();
         simple.put(0, 42);
         simple.put(1, "test");
         simple.put(2, true);

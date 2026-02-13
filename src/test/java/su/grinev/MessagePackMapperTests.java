@@ -43,10 +43,10 @@ public class MessagePackMapperTests {
             packet[i] = (byte) i;
         }
 
-        Map<Integer, Object> data = new HashMap<>();
+        Map<Object, Object> data = new HashMap<>();
         data.put(0, packet);
 
-        Map<Integer, Object> request = new HashMap<>();
+        Map<Object, Object> request = new HashMap<>();
         request.put(0, "FOO");
         request.put(1, data);
         request.put(2, System.currentTimeMillis());
@@ -89,10 +89,10 @@ public class MessagePackMapperTests {
             packet[i] = (byte) (i % 128);
         }
 
-        Map<Integer, Object> data = new HashMap<>();
+        Map<Object, Object> data = new HashMap<>();
         data.put(0, packet);
 
-        Map<Integer, Object> request = new HashMap<>();
+        Map<Object, Object> request = new HashMap<>();
         request.put(0, "FOO");
         request.put(1, data);
 
@@ -172,7 +172,7 @@ public class MessagePackMapperTests {
         MessagePackReader reader = new MessagePackReader(readerContextPool, stackPool, true, true);
 
         // Create 1000 nested objects
-        Map<Integer, Object> fields = new HashMap<>();
+        Map<Object, Object> fields = new HashMap<>();
         for (int i = 0; i < 1000; i++) {
             Map<Integer, Object> nested = new HashMap<>();
             nested.put(0, i);

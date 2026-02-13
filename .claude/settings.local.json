@@ -14,7 +14,8 @@
       "Bash(git stash:*)",
       "Bash(git commit -m \"$\\(cat <<''EOF''\nRefactor deserialization to reuse BinaryDocument, add LZ4 benchmarks, update tests\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\nEOF\n\\)\")",
       "Bash(git push:*)",
-      "Bash(git tag:*)"
+      "Bash(git tag:*)",
+      "WebFetch(domain:github.com)"
     ]
   }
 }
