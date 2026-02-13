@@ -15,6 +15,7 @@ import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -347,6 +348,9 @@ public class Binder {
             if (targetType == Float.class || targetType == float.class) return num.floatValue();
             if (targetType == Short.class || targetType == short.class) return num.shortValue();
             if (targetType == Byte.class || targetType == byte.class) return num.byteValue();
+        }
+        if (value instanceof Instant inst && targetType == LocalDateTime.class) {
+            return LocalDateTime.ofInstant(inst, ZoneOffset.UTC);
         }
         return value;
     }

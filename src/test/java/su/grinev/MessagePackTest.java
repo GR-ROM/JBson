@@ -7,6 +7,7 @@ import su.grinev.pool.Pool;
 import su.grinev.pool.PoolFactory;
 
 import java.nio.ByteBuffer;
+import java.time.Instant;
 import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -194,6 +195,82 @@ public class MessagePackTest {
         MessagePackExtension ext = (MessagePackExtension) deserialized.get("0");
         assertEquals(1, ext.type());
         assertArrayEquals(new byte[]{0x01, 0x02, 0x03, 0x04}, ext.data());
+    }
+
+    @Test
+    public void serializeTimestamp64WithNanos() {
+        MessagePackWriter writer = new MessagePackWriter(writerContextPool);
+        Instant now = Instant.now();
+
+        Map<Integer, Object> map = new HashMap<>();
+        map.put(0, now);
+
+        DynamicByteBuffer buffer = new DynamicByteBuffer(129 * 1024, true);
+        writer.serialize(buffer, new BinaryDocument(map));
+        ByteBuffer buf = buffer.getBuffer();
+
+        MessagePackReader reader = new MessagePackReader(readerContextPool, stackPool, false, false);
+        BinaryDocument deserialized = new BinaryDocument(new HashMap<>());
+        reader.deserialize(buf, deserialized);
+
+        assertEquals(now, deserialized.get("0"));
+    }
+
+    @Test
+    public void serializeTimestamp32NoNanos() {
+        MessagePackWriter writer = new MessagePackWriter(writerContextPool);
+        Instant ts = Instant.ofEpochSecond(1000000);
+
+        Map<Integer, Object> map = new HashMap<>();
+        map.put(0, ts);
+
+        DynamicByteBuffer buffer = new DynamicByteBuffer(129 * 1024, true);
+        writer.serialize(buffer, new BinaryDocument(map));
+        ByteBuffer buf = buffer.getBuffer();
+
+        MessagePackReader reader = new MessagePackReader(readerContextPool, stackPool, false, false);
+        BinaryDocument deserialized = new BinaryDocument(new HashMap<>());
+        reader.deserialize(buf, deserialized);
+
+        assertEquals(ts, deserialized.get("0"));
+    }
+
+    @Test
+    public void serializeTimestamp96NegativeSeconds() {
+        MessagePackWriter writer = new MessagePackWriter(writerContextPool);
+        Instant ts = Instant.ofEpochSecond(-1, 500000000);
+
+        Map<Integer, Object> map = new HashMap<>();
+        map.put(0, ts);
+
+        DynamicByteBuffer buffer = new DynamicByteBuffer(129 * 1024, true);
+        writer.serialize(buffer, new BinaryDocument(map));
+        ByteBuffer buf = buffer.getBuffer();
+
+        MessagePackReader reader = new MessagePackReader(readerContextPool, stackPool, false, false);
+        BinaryDocument deserialized = new BinaryDocument(new HashMap<>());
+        reader.deserialize(buf, deserialized);
+
+        assertEquals(ts, deserialized.get("0"));
+    }
+
+    @Test
+    public void serializeTimestamp32Epoch() {
+        MessagePackWriter writer = new MessagePackWriter(writerContextPool);
+        Instant ts = Instant.EPOCH;
+
+        Map<Integer, Object> map = new HashMap<>();
+        map.put(0, ts);
+
+        DynamicByteBuffer buffer = new DynamicByteBuffer(129 * 1024, true);
+        writer.serialize(buffer, new BinaryDocument(map));
+        ByteBuffer buf = buffer.getBuffer();
+
+        MessagePackReader reader = new MessagePackReader(readerContextPool, stackPool, false, false);
+        BinaryDocument deserialized = new BinaryDocument(new HashMap<>());
+        reader.deserialize(buf, deserialized);
+
+        assertEquals(ts, deserialized.get("0"));
     }
 
     // --- Delta timing tests ---

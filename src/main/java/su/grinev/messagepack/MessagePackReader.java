@@ -6,6 +6,7 @@ import su.grinev.pool.Pool;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.*;
 
 public class MessagePackReader implements Deserializer {
@@ -193,11 +194,35 @@ public class MessagePackReader implements Deserializer {
         }
     }
 
-    private MessagePackExtension readExtension(ByteBuffer buffer, int length) {
+    private Object readExtension(ByteBuffer buffer, int length) {
         byte extType = buffer.get();
+        if (extType == -1) {
+            return readTimestamp(buffer, length);
+        }
         byte[] data = new byte[length];
         buffer.get(data);
         return new MessagePackExtension(extType, data);
+    }
+
+    private Instant readTimestamp(ByteBuffer buffer, int length) {
+        return switch (length) {
+            case 4 -> {
+                long seconds = buffer.getInt() & 0xFFFFFFFFL;
+                yield Instant.ofEpochSecond(seconds);
+            }
+            case 8 -> {
+                long val = buffer.getLong();
+                int nanos = (int) (val >>> 34);
+                long seconds = val & 0x3FFFFFFFFL;
+                yield Instant.ofEpochSecond(seconds, nanos);
+            }
+            case 12 -> {
+                int nanos = buffer.getInt();
+                long seconds = buffer.getLong();
+                yield Instant.ofEpochSecond(seconds, nanos);
+            }
+            default -> throw new MessagePackException("Invalid timestamp length: " + length);
+        };
     }
 
     private String readString(ByteBuffer buffer, int len) {
