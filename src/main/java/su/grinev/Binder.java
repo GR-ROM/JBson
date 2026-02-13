@@ -20,6 +20,14 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public class Binder {
 
+    public enum ClassNameMode { FULL_NAME, SIMPLE_NAME }
+
+    private final ClassNameMode classNameMode;
+
+    public Binder(ClassNameMode classNameMode) {
+        this.classNameMode = classNameMode;
+    }
+
     enum FieldKind { PRIMITIVE, ENUM, COLLECTION, MAP, TYPE, NESTED }
 
     static final class FieldBinding {
@@ -171,7 +179,10 @@ public class Binder {
                         case ENUM -> currentDocument.put(tag, fieldValue.toString());
                         case TYPE -> {
                             Map<Integer, Object> nested = new LinkedHashMap<>();
-                            currentDocument.put(binding.discriminator, fieldValue.getClass().getName());
+                            String className = classNameMode == ClassNameMode.SIMPLE_NAME
+                                    ? fieldValue.getClass().getSimpleName()
+                                    : fieldValue.getClass().getName();
+                            currentDocument.put(binding.discriminator, className);
                             currentDocument.put(tag, nested);
                             stack.addLast(new BinderContext(fieldValue, nested, fieldValue.getClass()));
                         }

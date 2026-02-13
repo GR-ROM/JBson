@@ -21,40 +21,49 @@ import java.util.function.Supplier;
 
 @Getter
 public class Codec {
-    private final Binder writerBinder = new Binder();
-    private final Binder readerBinder = new Binder();
+    private final Binder writerBinder;
+    private final Binder readerBinder;
     private final Serializer serializer;
     private final Deserializer deserializer;
     private final DisposablePool<DynamicByteBuffer> bufferPool;
 
-    public Codec(Serializer serializer, Deserializer deserializer, DisposablePool<DynamicByteBuffer> bufferPool) {
+    public Codec(Serializer serializer, Deserializer deserializer, DisposablePool<DynamicByteBuffer> bufferPool, Binder.ClassNameMode classNameMode) {
         this.serializer = serializer;
         this.deserializer = deserializer;
         this.bufferPool = bufferPool;
+        this.writerBinder = new Binder(classNameMode);
+        this.readerBinder = new Binder(classNameMode);
     }
 
     public static Codec bson(PoolFactory poolFactory, int documentSize, Supplier<ByteBuffer> byteBufferAllocator) {
-        return bson(poolFactory, documentSize, byteBufferAllocator, true);
+        return bson(poolFactory, documentSize, byteBufferAllocator, true, Binder.ClassNameMode.FULL_NAME);
     }
 
     public static Codec bson(PoolFactory poolFactory, int documentSize, Supplier<ByteBuffer> byteBufferAllocator, boolean readBinaryAsByteArray) {
+        return bson(poolFactory, documentSize, byteBufferAllocator, readBinaryAsByteArray, Binder.ClassNameMode.FULL_NAME);
+    }
+
+    public static Codec bson(PoolFactory poolFactory, int documentSize, Supplier<ByteBuffer> byteBufferAllocator, boolean readBinaryAsByteArray, Binder.ClassNameMode classNameMode) {
         BsonObjectWriter writer = new BsonObjectWriter(poolFactory, documentSize, true);
         BsonObjectReader reader = new BsonObjectReader(poolFactory, documentSize, true, byteBufferAllocator);
         reader.setReadBinaryAsByteArray(readBinaryAsByteArray);
         DisposablePool<DynamicByteBuffer> pool = poolFactory.getDisposablePool(
                 "codec-buffer-pool", () -> new DynamicByteBuffer(documentSize, true));
-        return new Codec(writer, reader, pool);
+        return new Codec(writer, reader, pool, classNameMode);
     }
 
     public static Codec messagePack(PoolFactory poolFactory, int documentSize) {
+        return messagePack(poolFactory, documentSize, Binder.ClassNameMode.FULL_NAME);
+    }
+
+    public static Codec messagePack(PoolFactory poolFactory, int documentSize, Binder.ClassNameMode classNameMode) {
         Pool<WriterContext> writerContextPool = poolFactory.getPool("msgpack-writer-context-pool", WriterContext::new);
         Pool<ReaderContext> readerContextPool = poolFactory.getPool("msgpack-reader-context-pool", ReaderContext::new);
         Pool<ArrayDeque<ReaderContext>> stackPool = poolFactory.getPool("msgpack-reader-stack-pool", () -> new ArrayDeque<>(64));
         MessagePackWriter writer = new MessagePackWriter(writerContextPool);
         MessagePackReader reader = new MessagePackReader(readerContextPool, stackPool, true, true);
-        DisposablePool<DynamicByteBuffer> pool = poolFactory.getDisposablePool(
-                "codec-buffer-pool", () -> new DynamicByteBuffer(documentSize, true));
-        return new Codec(writer, reader, pool);
+        DisposablePool<DynamicByteBuffer> pool = poolFactory.getDisposablePool("codec-buffer-pool", () -> new DynamicByteBuffer(documentSize, true));
+        return new Codec(writer, reader, pool, classNameMode);
     }
 
     public DynamicByteBuffer serialize(Object o) {

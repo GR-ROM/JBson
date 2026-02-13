@@ -128,7 +128,7 @@ public class BsonMapperTests {
         final int WARMUP_ITERATIONS = 5000;
         final int BENCHMARK_ITERATIONS = 10000;
 
-        Binder binder = new Binder();
+        Binder binder = new Binder(Binder.ClassNameMode.FULL_NAME);
         PoolFactory poolFactory = PoolFactory.Builder.builder()
                 .setMinPoolSize(10)
                 .setMaxPoolSize(1000)

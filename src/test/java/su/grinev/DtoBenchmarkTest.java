@@ -82,7 +82,7 @@ public class DtoBenchmarkTest {
         MessagePackReader msgpackReader = new MessagePackReader(
                 mpReaderCtxPool, mpStackPool, true, true);
 
-        Binder binder = new Binder();
+        Binder binder = new Binder(Binder.ClassNameMode.FULL_NAME);
 
         // Create 1500b IP packet with pseudo-random payload
         ByteBuffer packetBuf = ByteBuffer.allocateDirect(PACKET_SIZE);
@@ -320,7 +320,7 @@ public class DtoBenchmarkTest {
         LZ4FastDecompressor lz4Decompressor = lz4Factory.fastDecompressor();
 
         // Setup Binder (for BSON/MessagePack int-key POJO mapping)
-        Binder binder = new Binder();
+        Binder binder = new Binder(Binder.ClassNameMode.FULL_NAME);
 
         // Create test DTO
         GetBlockingsInfoResultCacheableDto dto = createTestDto(itemCount);
