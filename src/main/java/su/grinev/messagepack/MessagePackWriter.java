@@ -13,21 +13,19 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
-import java.util.HashMap;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 public class MessagePackWriter implements Serializer {
     private final Pool<WriterContext> contextPool;
+    private final Pool<ArrayDeque<WriterContext>> stackPool;
     private final Map<Integer, byte[]> keyCache = new HashMap<>();
     @Setter
     @Getter
     private boolean writeLengthHeader;
 
-
-    public MessagePackWriter(Pool<WriterContext> contextPool) {
+    public MessagePackWriter(Pool<WriterContext> contextPool, Pool<ArrayDeque<WriterContext>> stackPool) {
         this.contextPool = contextPool;
+        this.stackPool = stackPool;
         writeLengthHeader = true;
     }
 
@@ -38,43 +36,48 @@ public class MessagePackWriter implements Serializer {
             buffer.putInt(0);
         }
         Map<Integer, Object> documentMap = document.getDocumentMap();
-        LinkedList<WriterContext> stack = new LinkedList<>();
-        stack.push(contextPool.get().init(documentMap.entrySet().iterator()));
+        ArrayDeque<WriterContext> stack = stackPool.get();
 
-        writeMapHeader(buffer, documentMap.size());
+        try {
+            stack.push(contextPool.get().init(documentMap.entrySet().iterator()));
 
-        while (!stack.isEmpty()) {
-            WriterContext context = stack.getFirst();
-            int stackSize = stack.size();
+            writeMapHeader(buffer, documentMap.size());
 
-            while (context.objectMap.hasNext()) {
-                Map.Entry<Integer, Object> entry = context.objectMap.next();
-                //writeString(buffer, entry.getKey());
-                writeInt(buffer, entry.getKey());
+            while (!stack.isEmpty()) {
+                WriterContext context = stack.getFirst();
+                int stackSize = stack.size();
 
-                Object value = entry.getValue();
-                if (value instanceof Map map) {
-                    writeMapHeader(buffer, map.size());
-                    stack.push(contextPool.get().init(map.entrySet().iterator()));
-                    break;
-                } else {
-                    writeValue(buffer, value);
+                while (context.objectMap.hasNext()) {
+                    Map.Entry<Integer, Object> entry = context.objectMap.next();
+                    //writeString(buffer, entry.getKey());
+                    writeInt(buffer, entry.getKey());
+
+                    Object value = entry.getValue();
+                    if (value instanceof Map map) {
+                        writeMapHeader(buffer, map.size());
+                        stack.push(contextPool.get().init(map.entrySet().iterator()));
+                        break;
+                    } else {
+                        writeValue(buffer, value);
+                    }
+                }
+
+                if (stack.size() == stackSize) {
+                    WriterContext ctx = stack.removeFirst();
+                    ctx.reset();
+                    contextPool.release(ctx);
                 }
             }
 
-            if (stack.size() == stackSize) {
-                WriterContext ctx = stack.removeFirst();
-                ctx.reset();
-                contextPool.release(ctx);
+            if (writeLengthHeader) {
+                int bufferSize = buffer.getBuffer().position();
+                buffer.position(0).putInt(bufferSize);
+                buffer.position(bufferSize);
             }
+            buffer.flip();
+        } finally {
+            stackPool.release(stack);
         }
-
-        if (writeLengthHeader) {
-            int bufferSize = buffer.getBuffer().position();
-            buffer.position(0).putInt(bufferSize);
-            buffer.position(bufferSize);
-        }
-        buffer.flip();
     }
 
     private void writeMapHeader(DynamicByteBuffer buffer, int size) {

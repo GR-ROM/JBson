@@ -24,10 +24,11 @@ public class MessagePackTest {
     private final Pool<ReaderContext> readerContextPool = poolFactory.getPool(ReaderContext::new);
     private final Pool<ArrayDeque<ReaderContext>> stackPool = poolFactory.getPool(() -> new ArrayDeque<>(64));
     private final Pool<WriterContext> writerContextPool = poolFactory.getPool(WriterContext::new);
+    private final Pool<ArrayDeque<WriterContext>> writerStackPool = poolFactory.getPool(() -> new ArrayDeque<>(16));
 
     @Test
     public void serializeSimpleMap() {
-        MessagePackWriter writer = new MessagePackWriter(writerContextPool);
+        MessagePackWriter writer = new MessagePackWriter(writerContextPool, writerStackPool);
 
         Map<Integer, Object> map = new HashMap<>();
         map.put(0, 42);
@@ -47,7 +48,7 @@ public class MessagePackTest {
 
     @Test
     public void serializeNestedMap() {
-        MessagePackWriter writer = new MessagePackWriter(writerContextPool);
+        MessagePackWriter writer = new MessagePackWriter(writerContextPool, writerStackPool);
 
         Map<Integer, Object> nested = new HashMap<>();
         nested.put(0, 2);
@@ -73,7 +74,7 @@ public class MessagePackTest {
     @Test
     @SuppressWarnings("unchecked")
     public void serializeComplexObject() {
-        MessagePackWriter writer = new MessagePackWriter(writerContextPool);
+        MessagePackWriter writer = new MessagePackWriter(writerContextPool, writerStackPool);
 
         Map<Integer, Object> map = new HashMap<>();
         map.put(0, null);
@@ -116,7 +117,7 @@ public class MessagePackTest {
 
     @Test
     public void serializeDeeplyNestedMaps() {
-        MessagePackWriter writer = new MessagePackWriter(writerContextPool);
+        MessagePackWriter writer = new MessagePackWriter(writerContextPool, writerStackPool);
 
         Map<Integer, Object> level3 = new HashMap<>();
         level3.put(0, "deep");
@@ -153,8 +154,9 @@ public class MessagePackTest {
         Pool<ReaderContext> localReaderPool = localFactory.getPool(ReaderContext::new);
         Pool<ArrayDeque<ReaderContext>> localStackPool = localFactory.getPool(() -> new ArrayDeque<>(64));
         Pool<WriterContext> localWriterPool = localFactory.getPool(WriterContext::new);
+        Pool<ArrayDeque<WriterContext>> localWriterStackPool = localFactory.getPool(() -> new ArrayDeque<>(16));
 
-        MessagePackWriter writer = new MessagePackWriter(localWriterPool);
+        MessagePackWriter writer = new MessagePackWriter(localWriterPool, localWriterStackPool);
         MessagePackReader reader = new MessagePackReader(localReaderPool, localStackPool, false, false);
 
         DynamicByteBuffer buffer = new DynamicByteBuffer(129 * 1024, true);
@@ -179,7 +181,7 @@ public class MessagePackTest {
 
     @Test
     public void serializeExtension() {
-        MessagePackWriter writer = new MessagePackWriter(writerContextPool);
+        MessagePackWriter writer = new MessagePackWriter(writerContextPool, writerStackPool);
 
         Map<Integer, Object> map = new HashMap<>();
         map.put(0, new MessagePackExtension((byte) 1, new byte[]{0x01, 0x02, 0x03, 0x04}));
@@ -199,7 +201,7 @@ public class MessagePackTest {
 
     @Test
     public void serializeTimestamp64WithNanos() {
-        MessagePackWriter writer = new MessagePackWriter(writerContextPool);
+        MessagePackWriter writer = new MessagePackWriter(writerContextPool, writerStackPool);
         Instant now = Instant.now();
 
         Map<Integer, Object> map = new HashMap<>();
@@ -218,7 +220,7 @@ public class MessagePackTest {
 
     @Test
     public void serializeTimestamp32NoNanos() {
-        MessagePackWriter writer = new MessagePackWriter(writerContextPool);
+        MessagePackWriter writer = new MessagePackWriter(writerContextPool, writerStackPool);
         Instant ts = Instant.ofEpochSecond(1000000);
 
         Map<Integer, Object> map = new HashMap<>();
@@ -237,7 +239,7 @@ public class MessagePackTest {
 
     @Test
     public void serializeTimestamp96NegativeSeconds() {
-        MessagePackWriter writer = new MessagePackWriter(writerContextPool);
+        MessagePackWriter writer = new MessagePackWriter(writerContextPool, writerStackPool);
         Instant ts = Instant.ofEpochSecond(-1, 500000000);
 
         Map<Integer, Object> map = new HashMap<>();
@@ -256,7 +258,7 @@ public class MessagePackTest {
 
     @Test
     public void serializeTimestamp32Epoch() {
-        MessagePackWriter writer = new MessagePackWriter(writerContextPool);
+        MessagePackWriter writer = new MessagePackWriter(writerContextPool, writerStackPool);
         Instant ts = Instant.EPOCH;
 
         Map<Integer, Object> map = new HashMap<>();
@@ -288,7 +290,8 @@ public class MessagePackTest {
                 .build();
 
         Pool<WriterContext> perfWriterPool = perfPoolFactory.getPool(WriterContext::new);
-        MessagePackWriter writer = new MessagePackWriter(perfWriterPool);
+        Pool<ArrayDeque<WriterContext>> perfWriterStackPool = perfPoolFactory.getPool(() -> new ArrayDeque<>(16));
+        MessagePackWriter writer = new MessagePackWriter(perfWriterPool, perfWriterStackPool);
 
         byte[] payload = new byte[128 * 1024];
         for (int i = 0; i < payload.length; i++) payload[i] = (byte) (i % 128);
@@ -332,7 +335,8 @@ public class MessagePackTest {
         Pool<ReaderContext> perfReaderPool = perfPoolFactory.getPool(ReaderContext::new);
         Pool<ArrayDeque<ReaderContext>> perfStackPool = perfPoolFactory.getPool(() -> new ArrayDeque<>(64));
 
-        MessagePackWriter writer = new MessagePackWriter(perfWriterPool);
+        Pool<ArrayDeque<WriterContext>> perfWriterStackPool = perfPoolFactory.getPool(() -> new ArrayDeque<>(16));
+        MessagePackWriter writer = new MessagePackWriter(perfWriterPool, perfWriterStackPool);
         MessagePackReader reader = new MessagePackReader(perfReaderPool, perfStackPool, false, false);
 
         byte[] payload = new byte[128 * 1024];
@@ -381,7 +385,8 @@ public class MessagePackTest {
         Pool<ReaderContext> perfReaderPool = perfPoolFactory.getPool(ReaderContext::new);
         Pool<ArrayDeque<ReaderContext>> perfStackPool = perfPoolFactory.getPool(() -> new ArrayDeque<>(64));
 
-        MessagePackWriter writer = new MessagePackWriter(perfWriterPool);
+        Pool<ArrayDeque<WriterContext>> perfWriterStackPool = perfPoolFactory.getPool(() -> new ArrayDeque<>(16));
+        MessagePackWriter writer = new MessagePackWriter(perfWriterPool, perfWriterStackPool);
         MessagePackReader reader = new MessagePackReader(perfReaderPool, perfStackPool, false, false);
 
         byte[] payload = new byte[128 * 1024];
@@ -428,7 +433,8 @@ public class MessagePackTest {
         Pool<ReaderContext> perfReaderPool = perfPoolFactory.getPool(ReaderContext::new);
         Pool<ArrayDeque<ReaderContext>> perfStackPool = perfPoolFactory.getPool(() -> new ArrayDeque<>(64));
 
-        MessagePackWriter writer = new MessagePackWriter(perfWriterPool);
+        Pool<ArrayDeque<WriterContext>> perfWriterStackPool = perfPoolFactory.getPool(() -> new ArrayDeque<>(16));
+        MessagePackWriter writer = new MessagePackWriter(perfWriterPool, perfWriterStackPool);
         MessagePackReader reader = new MessagePackReader(perfReaderPool, perfStackPool, false, false);
 
         // 1000 nested objects

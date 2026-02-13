@@ -78,7 +78,8 @@ public class DtoBenchmarkTest {
         Pool<ArrayDeque<ReaderContext>> mpStackPool =
                 poolFactory.getPool(() -> new ArrayDeque<>(64));
         Pool<WriterContext> mpWriterCtxPool = poolFactory.getPool(WriterContext::new);
-        MessagePackWriter msgpackWriter = new MessagePackWriter(mpWriterCtxPool);
+        Pool<ArrayDeque<WriterContext>> mpWriterStackPool = poolFactory.getPool(() -> new ArrayDeque<>(16));
+        MessagePackWriter msgpackWriter = new MessagePackWriter(mpWriterCtxPool, mpWriterStackPool);
         MessagePackReader msgpackReader = new MessagePackReader(
                 mpReaderCtxPool, mpStackPool, true, true);
 
@@ -310,7 +311,8 @@ public class DtoBenchmarkTest {
         Pool<ArrayDeque<ReaderContext>> msgpackStackPool =
                 poolFactory.getPool(() -> new ArrayDeque<>(64));
         Pool<WriterContext> msgpackWriterCtxPool = poolFactory.getPool(WriterContext::new);
-        MessagePackWriter msgpackWriter = new MessagePackWriter(msgpackWriterCtxPool);
+        Pool<ArrayDeque<WriterContext>> msgpackWriterStackPool = poolFactory.getPool(() -> new ArrayDeque<>(16));
+        MessagePackWriter msgpackWriter = new MessagePackWriter(msgpackWriterCtxPool, msgpackWriterStackPool);
         MessagePackReader msgpackReader = new MessagePackReader(
                 msgpackReaderCtxPool, msgpackStackPool, true, true);
 

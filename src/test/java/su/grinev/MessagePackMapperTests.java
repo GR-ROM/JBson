@@ -34,7 +34,8 @@ public class MessagePackMapperTests {
         Pool<ArrayDeque<ReaderContext>> stackPool = poolFactory.getPool(() -> new ArrayDeque<>(64));
         Pool<WriterContext> writerContextPool = poolFactory.getPool(WriterContext::new);
 
-        MessagePackWriter writer = new MessagePackWriter(writerContextPool);
+        Pool<ArrayDeque<WriterContext>> writerStackPool = poolFactory.getPool(() -> new ArrayDeque<>(16));
+        MessagePackWriter writer = new MessagePackWriter(writerContextPool, writerStackPool);
         MessagePackReader reader = new MessagePackReader(readerContextPool, stackPool, false, false);
 
         byte[] packet = new byte[1024];
@@ -78,7 +79,8 @@ public class MessagePackMapperTests {
         Pool<ArrayDeque<ReaderContext>> stackPool = poolFactory.getPool(() -> new ArrayDeque<>(64));
         Pool<WriterContext> writerContextPool = poolFactory.getPool(WriterContext::new);
 
-        MessagePackWriter writer = new MessagePackWriter(writerContextPool);
+        Pool<ArrayDeque<WriterContext>> writerStackPool = poolFactory.getPool(() -> new ArrayDeque<>(16));
+        MessagePackWriter writer = new MessagePackWriter(writerContextPool, writerStackPool);
         MessagePackReader reader = new MessagePackReader(readerContextPool, stackPool, true, true);
 
         // Create 128KB payload
@@ -165,7 +167,8 @@ public class MessagePackMapperTests {
         Pool<ArrayDeque<ReaderContext>> stackPool = poolFactory.getPool(() -> new ArrayDeque<>(64));
         Pool<WriterContext> writerContextPool = poolFactory.getPool(WriterContext::new);
 
-        MessagePackWriter writer = new MessagePackWriter(writerContextPool);
+        Pool<ArrayDeque<WriterContext>> writerStackPool = poolFactory.getPool(() -> new ArrayDeque<>(16));
+        MessagePackWriter writer = new MessagePackWriter(writerContextPool, writerStackPool);
         MessagePackReader reader = new MessagePackReader(readerContextPool, stackPool, true, true);
 
         // Create 1000 nested objects

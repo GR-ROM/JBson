@@ -21,8 +21,7 @@ import java.util.function.Supplier;
 
 @Getter
 public class Codec {
-    private final Binder writerBinder;
-    private final Binder readerBinder;
+    private final Binder binder;
     private final Serializer serializer;
     private final Deserializer deserializer;
     private final DisposablePool<DynamicByteBuffer> bufferPool;
@@ -31,8 +30,7 @@ public class Codec {
         this.serializer = serializer;
         this.deserializer = deserializer;
         this.bufferPool = bufferPool;
-        this.writerBinder = new Binder(classNameMode);
-        this.readerBinder = new Binder(classNameMode);
+        this.binder = new Binder(classNameMode);
     }
 
     public static Codec bson(PoolFactory poolFactory, int documentSize, Supplier<ByteBuffer> byteBufferAllocator) {
@@ -47,8 +45,7 @@ public class Codec {
         BsonObjectWriter writer = new BsonObjectWriter(poolFactory, documentSize, true);
         BsonObjectReader reader = new BsonObjectReader(poolFactory, documentSize, true, byteBufferAllocator);
         reader.setReadBinaryAsByteArray(readBinaryAsByteArray);
-        DisposablePool<DynamicByteBuffer> pool = poolFactory.getDisposablePool(
-                "codec-buffer-pool", () -> new DynamicByteBuffer(documentSize, true));
+        DisposablePool<DynamicByteBuffer> pool = poolFactory.getDisposablePool("codec-buffer-pool", () -> new DynamicByteBuffer(documentSize, true));
         return new Codec(writer, reader, pool, classNameMode);
     }
 
@@ -59,15 +56,16 @@ public class Codec {
     public static Codec messagePack(PoolFactory poolFactory, int documentSize, Binder.ClassNameMode classNameMode) {
         Pool<WriterContext> writerContextPool = poolFactory.getPool("msgpack-writer-context-pool", WriterContext::new);
         Pool<ReaderContext> readerContextPool = poolFactory.getPool("msgpack-reader-context-pool", ReaderContext::new);
-        Pool<ArrayDeque<ReaderContext>> stackPool = poolFactory.getPool("msgpack-reader-stack-pool", () -> new ArrayDeque<>(64));
-        MessagePackWriter writer = new MessagePackWriter(writerContextPool);
-        MessagePackReader reader = new MessagePackReader(readerContextPool, stackPool, true, true);
+        Pool<ArrayDeque<ReaderContext>> readerStackPool = poolFactory.getPool("msgpack-reader-stack-pool", () -> new ArrayDeque<>(64));
+        Pool<ArrayDeque<WriterContext>> writerStackPool = poolFactory.getPool("msgpack-writer-stack-pool", () -> new ArrayDeque<>(64));
+        MessagePackWriter writer = new MessagePackWriter(writerContextPool, writerStackPool);
+        MessagePackReader reader = new MessagePackReader(readerContextPool, readerStackPool, true, true);
         DisposablePool<DynamicByteBuffer> pool = poolFactory.getDisposablePool("codec-buffer-pool", () -> new DynamicByteBuffer(documentSize, true));
         return new Codec(writer, reader, pool, classNameMode);
     }
 
     public DynamicByteBuffer serialize(Object o) {
-        BinaryDocument document = writerBinder.unbind(o);
+        BinaryDocument document = binder.unbind(o);
         DynamicByteBuffer buffer = bufferPool.get();
         serializer.serialize(buffer, document);
         return buffer;
@@ -76,12 +74,12 @@ public class Codec {
     public <T> T deserialize(ByteBuffer buffer, Class<T> tClass) {
         BinaryDocument document = new BinaryDocument(new java.util.HashMap<>());
         deserializer.deserialize(buffer, document);
-        return readerBinder.bind(tClass, document);
+        return binder.bind(tClass, document);
     }
 
     public void serialize(Object o, OutputStream outputStream) throws IOException {
         try (DynamicByteBuffer buffer = bufferPool.get()) {
-            BinaryDocument document = writerBinder.unbind(o);
+            BinaryDocument document = binder.unbind(o);
             serializer.serialize(buffer, document);
             ByteBuffer raw = buffer.getBuffer();
             byte[] chunk = new byte[8192];

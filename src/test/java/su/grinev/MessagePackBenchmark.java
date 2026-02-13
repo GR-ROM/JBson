@@ -48,9 +48,10 @@ public class MessagePackBenchmark {
         Pool<ReaderContext> readerContextPool = poolFactory.getPool(ReaderContext::new);
         Pool<ArrayDeque<ReaderContext>> stackPool = poolFactory.getPool(() -> new ArrayDeque<>(64));
         Pool<WriterContext> writerContextPool = poolFactory.getPool(WriterContext::new);
+        Pool<ArrayDeque<WriterContext>> writerStackPool = poolFactory.getPool(() -> new ArrayDeque<>(16));
         bufferPool = poolFactory.getDisposablePool(() -> new DynamicByteBuffer(256 * 1024, true));
 
-        messagePackWriter = new MessagePackWriter(writerContextPool);
+        messagePackWriter = new MessagePackWriter(writerContextPool, writerStackPool);
         messagePackReader = new MessagePackReader(readerContextPool, stackPool, false, false);
 
         // Create document with 128KB binary payload
