@@ -1,6 +1,6 @@
 package su.grinev;
 
-import annotation.BsonType;
+import annotation.Type;
 import annotation.Tag;
 import annotation.Transient;
 
@@ -10,7 +10,6 @@ import java.lang.invoke.MethodType;
 import java.lang.invoke.VarHandle;
 import java.lang.reflect.Field;
 import java.lang.reflect.ParameterizedType;
-import java.lang.reflect.Type;
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.time.Instant;
@@ -21,23 +20,23 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public class Binder {
 
-    enum FieldKind { PRIMITIVE, ENUM, COLLECTION, MAP, BSON_TYPE, NESTED }
+    enum FieldKind { PRIMITIVE, ENUM, COLLECTION, MAP, TYPE, NESTED }
 
     static final class FieldBinding {
         final int tag;
         final VarHandle handle;
         final FieldKind kind;
         final Class<?> fieldType;
-        final Type genericType;
-        final int bsonDiscriminator; // -1 if not BSON_TYPE
+        final java.lang.reflect.Type genericType;
+        final int discriminator; // -1 if not BSON_TYPE
 
-        FieldBinding(int tag, VarHandle handle, FieldKind kind, Class<?> fieldType, Type genericType, int bsonDiscriminator) {
+        FieldBinding(int tag, VarHandle handle, FieldKind kind, Class<?> fieldType, java.lang.reflect.Type genericType, int discriminator) {
             this.tag = tag;
             this.handle = handle;
             this.kind = kind;
             this.fieldType = fieldType;
             this.genericType = genericType;
-            this.bsonDiscriminator = bsonDiscriminator;
+            this.discriminator = discriminator;
         }
     }
 
@@ -53,6 +52,22 @@ public class Binder {
 
     private static final Map<Class<?>, ClassSchema> schemaCache = new ConcurrentHashMap<>();
     private static final Map<Class<?>, MethodHandle> ctorCache = new ConcurrentHashMap<>();
+    private static final Map<String, Class<?>> classNameRegistry = new ConcurrentHashMap<>();
+    private static final Class<?> AMBIGUOUS = Binder.class;
+
+    public static void registerClass(Class<?>... classes) {
+        for (Class<?> clazz : classes) {
+            classNameRegistry.put(clazz.getName(), clazz);
+            classNameRegistry.merge(clazz.getSimpleName(), clazz,
+                    (existing, incoming) -> existing == incoming ? existing : AMBIGUOUS);
+        }
+    }
+
+    static Class<?> resolveClass(String name) throws ClassNotFoundException {
+        Class<?> cached = classNameRegistry.get(name);
+        if (cached != null && cached != AMBIGUOUS) return cached;
+        return Class.forName(name);
+    }
 
     @SuppressWarnings("unchecked")
     public <T> T bind(Class<T> tClass, BinaryDocument document) {
@@ -69,7 +84,7 @@ public class Binder {
             }
 
             if (ctx.o instanceof Collection<?> collection && ctx.document instanceof List<?> listData) {
-                Type itemType = resolveListItemType(ctx.type);
+                java.lang.reflect.Type itemType = resolveListItemType(ctx.type);
                 for (Object rawItem : listData) {
                     if (isPrimitiveOrWrapperOrString(rawItem.getClass())) {
                         ((Collection<Object>) collection).add(rawItem);
@@ -112,9 +127,9 @@ public class Binder {
                             binding.handle.set(ctx.o, targetMap);
                             stack.addLast(new BinderContext(targetMap, value, binding.genericType));
                         }
-                        case BSON_TYPE -> {
-                            String className = (String) documentMap.get(binding.bsonDiscriminator);
-                            Class<?> targetCls = Class.forName(className);
+                        case TYPE -> {
+                            String className = (String) documentMap.get(binding.discriminator);
+                            Class<?> targetCls = resolveClass(className);
                             Object newObject = instantiate(targetCls);
                             binding.handle.set(ctx.o, newObject);
                             stack.addLast(new BinderContext(newObject, value, targetCls));
@@ -154,9 +169,9 @@ public class Binder {
                     switch (binding.kind) {
                         case PRIMITIVE -> currentDocument.put(tag, fieldValue);
                         case ENUM -> currentDocument.put(tag, fieldValue.toString());
-                        case BSON_TYPE -> {
+                        case TYPE -> {
                             Map<Integer, Object> nested = new LinkedHashMap<>();
-                            currentDocument.put(binding.bsonDiscriminator, fieldValue.getClass().getName());
+                            currentDocument.put(binding.discriminator, fieldValue.getClass().getName());
                             currentDocument.put(tag, nested);
                             stack.addLast(new BinderContext(fieldValue, nested, fieldValue.getClass()));
                         }
@@ -232,6 +247,7 @@ public class Binder {
     }
 
     private static ClassSchema buildSchema(Class<?> clazz) {
+        registerClass(clazz);
         MethodHandles.Lookup lookup;
         try {
             lookup = MethodHandles.privateLookupIn(clazz, MethodHandles.lookup());
@@ -277,9 +293,9 @@ public class Binder {
                 kind = FieldKind.COLLECTION;
             } else if (Map.class.isAssignableFrom(fieldType)) {
                 kind = FieldKind.MAP;
-            } else if (field.isAnnotationPresent(BsonType.class)) {
-                kind = FieldKind.BSON_TYPE;
-                bsonDiscriminator = field.getAnnotation(BsonType.class).discriminator();
+            } else if (field.isAnnotationPresent(Type.class)) {
+                kind = FieldKind.TYPE;
+                bsonDiscriminator = field.getAnnotation(Type.class).discriminator();
             } else {
                 kind = FieldKind.NESTED;
             }
@@ -355,18 +371,18 @@ public class Binder {
         return value;
     }
 
-    private Type resolveListItemType(Type listType) {
+    private java.lang.reflect.Type resolveListItemType(java.lang.reflect.Type listType) {
         if (listType instanceof ParameterizedType pt) {
             return pt.getActualTypeArguments()[0];
         }
         return Object.class;
     }
 
-    private Class<?> resolveClassFromType(Type type) {
+    private Class<?> resolveClassFromType(java.lang.reflect.Type type) {
         if (type instanceof Class<?> c) return c;
         if (type instanceof ParameterizedType pt) return (Class<?>) pt.getRawType();
         throw new IllegalArgumentException("Unknown type: " + type);
     }
 
-    private record BinderContext(Object o, Object document, Type type) {}
+    private record BinderContext(Object o, Object document, java.lang.reflect.Type type) {}
 }
