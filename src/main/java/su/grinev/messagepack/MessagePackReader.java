@@ -1,5 +1,8 @@
 package su.grinev.messagepack;
 
+import lombok.Getter;
+import lombok.Setter;
+import lombok.extern.slf4j.Slf4j;
 import su.grinev.BinaryDocument;
 import su.grinev.Deserializer;
 import su.grinev.pool.Pool;
@@ -9,6 +12,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.*;
 
+@Slf4j
 public class MessagePackReader implements Deserializer {
 
     private static final int STRING_BUFFER_SIZE = 256;
@@ -17,6 +21,9 @@ public class MessagePackReader implements Deserializer {
     private final boolean useProjectionsForByteBuffer;
     private final boolean useByteBufferForBinary;
     private final ThreadLocal<byte[]> stringBuffer = ThreadLocal.withInitial(() -> new byte[STRING_BUFFER_SIZE]);
+    @Setter
+    @Getter
+    private boolean readLengthHeader;
 
     public MessagePackReader(
             Pool<ReaderContext> contextPool,
@@ -27,9 +34,15 @@ public class MessagePackReader implements Deserializer {
         this.stackPool = stackPool;
         this.useProjectionsForByteBuffer = useProjectionsForByteBuffer;
         this.useByteBufferForBinary = useByteBufferForBinary;
+        this.readLengthHeader = true;
     }
 
     public void deserialize(ByteBuffer buffer, BinaryDocument binaryDocument) {
+        int length = -1;
+        if (readLengthHeader) {
+            length = buffer.getInt();
+        }
+
         Map<Integer, Object> root = binaryDocument.getDocumentMap();
         ArrayDeque<ReaderContext> stack = stackPool.get();
 
@@ -75,6 +88,10 @@ public class MessagePackReader implements Deserializer {
         } finally {
             stack.clear();
             stackPool.release(stack);
+        }
+
+        if (length > -1 && length < buffer.position()) {
+            log.warn("Buffer is too small");
         }
     }
 

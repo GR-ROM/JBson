@@ -1,5 +1,7 @@
 package su.grinev.messagepack;
 
+import lombok.Getter;
+import lombok.Setter;
 import su.grinev.BinaryDocument;
 import su.grinev.Serializer;
 import su.grinev.pool.DynamicByteBuffer;
@@ -19,15 +21,23 @@ import java.util.Map;
 public class MessagePackWriter implements Serializer {
     private final Pool<WriterContext> contextPool;
     private final Map<Integer, byte[]> keyCache = new HashMap<>();
+    @Setter
+    @Getter
+    private boolean writeLengthHeader;
+
 
     public MessagePackWriter(Pool<WriterContext> contextPool) {
         this.contextPool = contextPool;
+        writeLengthHeader = true;
     }
 
     @SuppressWarnings("unchecked")
     public void serialize(DynamicByteBuffer buffer, BinaryDocument document) {
-        Map<Integer, Object> documentMap = document.getDocumentMap();
         buffer.getBuffer().clear().order(ByteOrder.BIG_ENDIAN);
+        if (writeLengthHeader) {
+            buffer.putInt(0);
+        }
+        Map<Integer, Object> documentMap = document.getDocumentMap();
         LinkedList<WriterContext> stack = new LinkedList<>();
         stack.push(contextPool.get().init(documentMap.entrySet().iterator()));
 
@@ -59,6 +69,11 @@ public class MessagePackWriter implements Serializer {
             }
         }
 
+        if (writeLengthHeader) {
+            int bufferSize = buffer.getBuffer().position();
+            buffer.position(0).putInt(bufferSize);
+            buffer.position(bufferSize);
+        }
         buffer.flip();
     }
 
