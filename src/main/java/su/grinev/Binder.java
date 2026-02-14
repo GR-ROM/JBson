@@ -61,6 +61,7 @@ public class Binder {
     private static final Map<Class<?>, ClassSchema> schemaCache = new ConcurrentHashMap<>();
     private static final Map<Class<?>, MethodHandle> ctorCache = new ConcurrentHashMap<>();
     private static final Map<String, Class<?>> classNameRegistry = new ConcurrentHashMap<>();
+    private static final Set<String> knownPackages = ConcurrentHashMap.newKeySet();
     private static final Class<?> AMBIGUOUS = Binder.class;
 
     public static void registerClass(Class<?>... classes) {
@@ -68,13 +69,25 @@ public class Binder {
             classNameRegistry.put(clazz.getName(), clazz);
             classNameRegistry.merge(clazz.getSimpleName(), clazz,
                     (existing, incoming) -> existing == incoming ? existing : AMBIGUOUS);
+            Package pkg = clazz.getPackage();
+            if (pkg != null) {
+                knownPackages.add(pkg.getName());
+            }
         }
     }
 
     static Class<?> resolveClass(String name) throws ClassNotFoundException {
         Class<?> cached = classNameRegistry.get(name);
         if (cached != null && cached != AMBIGUOUS) return cached;
-        return Class.forName(name);
+        if (name.indexOf('.') >= 0) return Class.forName(name);
+        for (String pkg : knownPackages) {
+            try {
+                Class<?> found = Class.forName(pkg + "." + name);
+                registerClass(found);
+                return found;
+            } catch (ClassNotFoundException ignored) {}
+        }
+        throw new ClassNotFoundException(name);
     }
 
     @SuppressWarnings("unchecked")

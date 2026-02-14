@@ -163,6 +163,33 @@ public class BinderClassResolutionTests {
     }
 
     @Test
+    void resolveSimpleNameViaPackageScanWithoutPriorRegistration() {
+        // Simulate bind-only scenario: construct a document manually with a simple
+        // class name in the discriminator — without ever calling unbind first.
+        // The parent class (VpnRequestDto) is in su.grinev.test, so building its
+        // schema registers that package. resolveClass should then find
+        // VpnForwardPacketDto by trying "su.grinev.test" + "." + "VpnForwardPacketDto".
+        Binder simpleNameBinder = new Binder(Binder.ClassNameMode.SIMPLE_NAME);
+
+        ByteBuffer packet = ByteBuffer.allocateDirect(16);
+        Map<Object, Object> nestedData = new LinkedHashMap<>();
+        nestedData.put(0, packet);
+
+        Map<Object, Object> rootMap = new LinkedHashMap<>();
+        rootMap.put(0, "FOO");                          // command
+        rootMap.put(1488, "VpnForwardPacketDto");       // discriminator — simple name
+        rootMap.put(1, nestedData);                     // data
+        rootMap.put(2, "0.1");                          // protocolVersion
+        rootMap.put(3, Instant.ofEpochMilli(6000000L)); // timestamp
+
+        BinaryDocument doc = new BinaryDocument(rootMap, 0);
+        VpnRequestDto<?> deserialized = simpleNameBinder.bind(VpnRequestDto.class, doc);
+
+        assertNotNull(deserialized.getData());
+        assertInstanceOf(VpnForwardPacketDto.class, deserialized.getData());
+    }
+
+    @Test
     void bindFailsWithUnresolvableClassName() {
         VpnRequestDto<VpnForwardPacketDto> original = VpnRequestDto.wrap(FOO, VpnForwardPacketDto.builder()
                 .packet(ByteBuffer.allocateDirect(16))
