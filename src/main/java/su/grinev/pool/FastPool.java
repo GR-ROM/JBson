@@ -110,6 +110,12 @@ public class FastPool<T> implements Trimmable {
         }
     }
 
+    /**
+     * Returns an object to the pool. A detected double release (more releases than gets)
+     * is logged as a warning and swallowed: the object is NOT re-offered, so it cannot end
+     * up idle in the pool twice. Set {@code -Dfastpool.strict=true} to restore the old
+     * fail-fast behaviour (throw {@link IllegalStateException}) — useful in tests/CI.
+     */
     public void release(T item) {
         if (checkedOut != null && !checkedOut.remove(item)) {
             // Releasing a buffer that is NOT currently checked out -> it was already released
@@ -120,7 +126,13 @@ public class FastPool<T> implements Trimmable {
         if (isUse.decrementAndGet() < 0) {
             // More releases than gets — a double release (or releasing a non-borrowed object).
             isUse.incrementAndGet();
-            throw new IllegalStateException("Double release detected in pool '" + name + "'");
+            log.warn("Double release detected in pool '{}' — object not returned to the pool. Release site:",
+                    name, new Throwable("release"));
+            // Property read only on this cold error path — never on the release fast path.
+            if (Boolean.getBoolean("fastpool.strict")) {
+                throw new IllegalStateException("Double release detected in pool '" + name + "'");
+            }
+            return;
         }
         pool.offer(item);
         if (permits != null) {

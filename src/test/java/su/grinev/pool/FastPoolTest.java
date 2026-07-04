@@ -56,16 +56,32 @@ public class FastPoolTest {
     }
 
     @Test
-    void doubleRelease_isDetected() {
+    void doubleRelease_isSwallowedAndNotReoffered() {
         FastPool<Object> pool = pool(0, 10, new ArrayList<>());
         Object o = pool.get();
         pool.release(o);
 
-        // releasing again (nothing else in flight) drives the in-use count below zero
-        assertThrows(IllegalStateException.class, () -> pool.release(o),
-                "a double release must be rejected");
-        // the pool is left consistent: in-use back at 0, not negative
-        assertEquals(0, pool.getCountInUse());
+        // releasing again (nothing else in flight) drives the in-use count below zero:
+        // logged as a warning, swallowed, and the object must NOT be offered a second time
+        assertDoesNotThrow(() -> pool.release(o), "default mode: warn, don't throw");
+        assertEquals(0, pool.getCountInUse(), "in-use stays at 0, not negative");
+        assertEquals(1, pool.getIdle(), "object must not sit in the idle pool twice");
+    }
+
+    @Test
+    void doubleRelease_strictModeThrows() {
+        System.setProperty("fastpool.strict", "true");
+        try {
+            FastPool<Object> pool = pool(0, 10, new ArrayList<>());
+            Object o = pool.get();
+            pool.release(o);
+
+            assertThrows(IllegalStateException.class, () -> pool.release(o),
+                    "-Dfastpool.strict=true restores fail-fast");
+            assertEquals(0, pool.getCountInUse());
+        } finally {
+            System.clearProperty("fastpool.strict");
+        }
     }
 
     @Test
