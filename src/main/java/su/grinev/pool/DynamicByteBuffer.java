@@ -17,6 +17,14 @@ import java.nio.ByteOrder;
 public class DynamicByteBuffer extends ArenaByteBuffer implements Disposable {
     private Runnable onDispose;
 
+    // Framing headroom (opt-in, set only via the origin-offset constructor). The payload is written
+    // starting at originOffset, reserving [0, originOffset) so a protocol header can be spliced in place
+    // right before the payload — no copy into a second buffer. originSize is the payload length, set by
+    // the producer (e.g. the TUN reader) after it writes the payload. Both default to 0, so buffers made
+    // through the other constructors behave exactly as before.
+    private int originOffset;
+    private int originSize;
+
     public DynamicByteBuffer(int capacity) {
         super(capacity);
     }
@@ -32,6 +40,35 @@ public class DynamicByteBuffer extends ArenaByteBuffer implements Disposable {
      */
     public DynamicByteBuffer(int capacity, boolean direct) {
         super(capacity);
+    }
+
+    /**
+     * Reserves {@code originOffset} bytes of headroom at the front so a producer can write its payload
+     * at {@code originOffset} and a framing header can later be spliced into the headroom in place,
+     * ending exactly where the payload begins (see the fast-path outbound serializer). Kept as a
+     * dedicated constructor so the existing ones stay byte-for-byte compatible.
+     */
+    public DynamicByteBuffer(int capacity, int originOffset, Release release) {
+        super(capacity, release);
+        this.originOffset = originOffset;
+    }
+
+    /** Start offset of the payload within the buffer; header headroom is {@code [0, originOffset)}. */
+    public int getOriginOffset() {
+        return originOffset;
+    }
+
+    public void setOriginOffset(int originOffset) {
+        this.originOffset = originOffset;
+    }
+
+    /** Payload length written at {@code originOffset}; set by the producer after writing the payload. */
+    public int getOriginSize() {
+        return originSize;
+    }
+
+    public void setOriginSize(int originSize) {
+        this.originSize = originSize;
     }
 
     public void initBuffer() {
