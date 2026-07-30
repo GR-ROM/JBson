@@ -56,42 +56,126 @@ public class FastPoolShardingTest {
         taken.forEach(pool::release);
     }
 
+    /** Runs a body on its own thread and waits, so the body gets its own shard assignment. */
+    private static void onOwnThread(String name, ThrowingRunnable body) throws Exception {
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        Thread t = new Thread(() -> {
+            try {
+                body.run();
+            } catch (Throwable e) {
+                failure.set(e);
+            }
+        }, name);
+        t.start();
+        t.join(TimeUnit.SECONDS.toMillis(10));
+        assertFalse(t.isAlive(), "thread " + name + " finished");
+        if (failure.get() != null) {
+            throw new AssertionError("failure on " + name, failure.get());
+        }
+    }
+
+    private interface ThrowingRunnable {
+        void run() throws Exception;
+    }
+
+    /** get() must take from a sibling shard rather than allocate when its own shard is empty. */
+    @Test
+    void get_stealsFromSiblingShard_ratherThanAllocating() throws Exception {
+        FastPool<Object> pool = sharded(0, 16, 4, new ArrayList<>());
+
+        // Producer thread: create one object and park it in ITS shard.
+        AtomicInteger producerShard = new AtomicInteger(-1);
+        onOwnThread("producer", () -> {
+            producerShard.set(pool.shardOfCurrentThread());
+            pool.release(pool.get());
+        });
+
+        assertEquals(1, pool.getTotalCreated(), "exactly one object exists");
+        assertEquals(1, pool.idleInShard(producerShard.get()), "it is idle in the producer's shard");
+
+        // Consumer thread on a different shard: its own shard is empty, so it must steal that object.
+        onOwnThread("consumer", () -> {
+            assertNotEquals(producerShard.get(), pool.shardOfCurrentThread(), "distinct shards");
+            assertEquals(0, pool.idleInShard(pool.shardOfCurrentThread()), "own shard starts empty");
+            Object stolen = pool.get();
+            assertNotNull(stolen);
+            assertEquals(1, pool.getTotalCreated(), "stole instead of allocating a second object");
+            assertEquals(0, pool.idleInShard(producerShard.get()), "taken out of the producer's shard");
+            pool.release(stolen);
+        });
+    }
+
+    /** release() must spill into a sibling shard rather than drop the object when its own shard is full. */
+    @Test
+    void release_overflowsIntoSiblingShard_whenOwnShardIsFull() throws Exception {
+        // maxSize 8 over 4 shards -> 2 slots per shard.
+        FastPool<Object> pool = sharded(0, 8, 4, new ArrayList<>());
+
+        onOwnThread("releaser", () -> {
+            int own = pool.shardOfCurrentThread();
+            List<Object> taken = new ArrayList<>();
+            for (int i = 0; i < 5; i++) {
+                taken.add(pool.get());
+            }
+            taken.forEach(pool::release);
+
+            assertEquals(2, pool.idleInShard(own), "own shard filled to its per-shard capacity");
+            assertEquals(5, pool.getIdle(), "the other three were kept in sibling shards, not dropped");
+        });
+    }
+
     /**
-     * The reason shards steal: in the real data path a buffer is acquired on one thread and released
-     * on another. Pure affinity would drain the producer's shard forever while the consumer's filled.
+     * End-to-end check of the asymmetric case sharding could get badly wrong: one thread only takes,
+     * another only gives back — exactly the TUN-reader / IO-thread handoff. With pure per-thread
+     * affinity (neither stealing nor spillover) the taker's shard drains and it allocates a fresh
+     * object on every get, forever.
+     *
+     * <p>This is deliberately an integration check, not a discriminating one: either rebalancing
+     * mechanism on its own keeps objects circulating here, so removing just one does not break it.
+     * The individual mechanisms are pinned by {@link #get_stealsFromSiblingShard_ratherThanAllocating}
+     * and {@link #release_overflowsIntoSiblingShard_whenOwnShardIsFull}.
      */
     @Test
-    void crossThreadHandoff_doesNotStarveTheProducerShard() throws Exception {
-        FastPool<Object> pool = sharded(4, 16, 4, new ArrayList<>());
-        int rounds = 500;
+    void asymmetricProducerConsumer_reusesObjectsInsteadOfAllocatingUnbounded() throws Exception {
+        FastPool<Object> pool = sharded(0, 64, 4, new ArrayList<>());
+        int rounds = 2000;
 
+        // Hand-off queue: taker pulls from the pool, giver returns to the pool, on distinct threads.
+        // Bounded on purpose. With an unbounded queue the taker simply runs ahead of the giver and
+        // the object count measures pipeline depth, not shard behaviour. Capped at 8, at most ~9
+        // objects can be in flight, so `totalCreated` becomes a direct read on whether stealing
+        // works: circulating -> stays near the bound, starving -> climbs toward `rounds`.
+        java.util.concurrent.BlockingQueue<Object> handoff = new java.util.concurrent.ArrayBlockingQueue<>(8);
         AtomicReference<Throwable> failure = new AtomicReference<>();
         CountDownLatch done = new CountDownLatch(1);
 
-        // Producer takes on this thread, consumer gives back on another — the shards must rebalance.
-        Thread consumer = new Thread(() -> {
+        Thread giver = new Thread(() -> {
             try {
                 for (int i = 0; i < rounds; i++) {
-                    Object o = pool.get();
-                    pool.release(o);
+                    pool.release(handoff.take());
                 }
-            } catch (Throwable t) {
-                failure.set(t);
+            } catch (Throwable e) {
+                failure.set(e);
             } finally {
                 done.countDown();
             }
-        }, "consumer");
-        consumer.start();
+        }, "giver");
+        giver.start();
 
-        List<Object> held = new ArrayList<>();
-        for (int i = 0; i < rounds; i++) {
-            held.add(pool.get());
-        }
-        held.forEach(pool::release);
+        onOwnThread("taker", () -> {
+            for (int i = 0; i < rounds; i++) {
+                handoff.put(pool.get());
+            }
+        });
 
-        assertTrue(done.await(10, TimeUnit.SECONDS), "consumer finished");
-        assertNull(failure.get(), "no failure on the consumer thread");
+        assertTrue(done.await(30, TimeUnit.SECONDS), "giver drained the handoff");
+        assertNull(failure.get());
         assertEquals(0, pool.getCountInUse(), "in-use accounting survives cross-thread release");
+        // The whole point: objects must circulate. Without stealing the taker's shard is empty on
+        // every get (the giver returns to its own shard) and this climbs toward `rounds`.
+        assertTrue(pool.getTotalCreated() < 64,
+                "objects circulate between shards instead of being allocated per get, created="
+                        + pool.getTotalCreated() + " over " + rounds + " rounds");
         assertTrue(pool.getIdle() > 0, "objects came back to the pool rather than being dropped");
     }
 
@@ -127,27 +211,51 @@ public class FastPoolShardingTest {
         assertTrue(pool.getIdle() <= 64 + 4, "idle stays within maxSize plus per-shard rounding");
     }
 
+    /**
+     * The first N threads to touch an N-shard pool must land on N distinct shards — that is the whole
+     * mechanism by which hot threads stop sharing a lock.
+     */
     @Test
-    void distinctThreads_landOnDistinctShards() throws Exception {
+    void firstThreads_landOnDistinctShards() throws Exception {
         FastPool<Object> pool = sharded(0, 16, 4, new ArrayList<>());
-        Set<Object> firstObjects = ConcurrentHashMap.newKeySet();
-        AtomicInteger created = new AtomicInteger();
+        Set<Integer> assigned = ConcurrentHashMap.newKeySet();
 
-        // Four threads, four shards, every shard empty: each thread must allocate its own object
-        // rather than contend. Objects are distinct, which is only observable because no thread
-        // found anything to steal.
-        CountDownLatch done = new CountDownLatch(4);
         for (int i = 0; i < 4; i++) {
-            new Thread(() -> {
-                Object o = pool.get();
-                firstObjects.add(o);
-                created.incrementAndGet();
-                done.countDown();
-            }).start();
+            onOwnThread("hot-" + i, () -> assigned.add(pool.shardOfCurrentThread()));
         }
-        assertTrue(done.await(10, TimeUnit.SECONDS));
-        assertEquals(4, firstObjects.size(), "each thread got its own object");
-        assertEquals(4, pool.getCountInUse());
+        assertEquals(Set.of(0, 1, 2, 3), assigned, "four threads, four distinct shards");
+    }
+
+    @Test
+    void unshardedPool_pinsEveryThreadToShardZero() throws Exception {
+        FastPool<Object> pool = sharded(0, 16, 1, new ArrayList<>());
+        for (int i = 0; i < 3; i++) {
+            onOwnThread("t-" + i, () -> assertEquals(0, pool.shardOfCurrentThread()));
+        }
+    }
+
+    /** A lopsided pool must come out balanced, not with one shard emptied and the rest untouched. */
+    @Test
+    void trim_evensOutLopsidedShards() throws Exception {
+        List<Object> destroyed = new ArrayList<>();
+        FastPool<Object> pool = sharded(0, 32, 4, destroyed);
+
+        // Pile 8 objects into a single shard by taking and releasing them all on one thread.
+        AtomicInteger loadedShard = new AtomicInteger(-1);
+        onOwnThread("loader", () -> {
+            loadedShard.set(pool.shardOfCurrentThread());
+            List<Object> taken = new ArrayList<>();
+            for (int i = 0; i < 8; i++) {
+                taken.add(pool.get());
+            }
+            taken.forEach(pool::release);
+        });
+        assertEquals(8, pool.idleInShard(loadedShard.get()), "all 8 idle in one shard");
+
+        assertTrue(pool.trim(4), "4 of 8 idle objects freed");
+        assertEquals(4, destroyed.size());
+        assertEquals(4, pool.getIdle());
+        assertEquals(4, pool.idleInShard(loadedShard.get()), "drained from the fullest shard");
     }
 
     @Test

@@ -135,6 +135,20 @@ public class FastPool<T> implements Trimmable {
         return shards;
     }
 
+    /**
+     * Idle objects held by one shard. Package-private: the split is an implementation detail, but
+     * without it a test cannot tell "stole from a sibling" from "allocated a new object", nor assert
+     * that shards stay balanced.
+     */
+    int idleInShard(int shard) {
+        return shardQueues[shard].size();
+    }
+
+    /** The shard this thread is pinned to — package-private, for tests that need determinism. */
+    int shardOfCurrentThread() {
+        return shardIndex.get();
+    }
+
     public T get() {
         if (permits != null) {
             acquirePermit();
