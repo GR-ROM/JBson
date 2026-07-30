@@ -12,9 +12,16 @@ import java.util.function.Supplier;
  */
 public class DisposablePool<T extends Disposable> extends FastPool<T> {
 
+    /** Unsharded (shards = 1) — the historical behaviour. */
     public DisposablePool(String name, Supplier<T> supplier,
                           int initialSize, int maxSize, boolean blocking, int timeoutMs) {
-        super(name, supplier, Disposable::destroy, initialSize, maxSize, blocking, timeoutMs);
+        this(name, supplier, initialSize, maxSize, blocking, timeoutMs, 1);
+    }
+
+    /** @param shards see {@link FastPool#FastPool(String, Supplier, java.util.function.Consumer, int, int, boolean, int, int)}. */
+    public DisposablePool(String name, Supplier<T> supplier,
+                          int initialSize, int maxSize, boolean blocking, int timeoutMs, int shards) {
+        super(name, supplier, Disposable::destroy, initialSize, maxSize, blocking, timeoutMs, shards);
     }
 
     @Override

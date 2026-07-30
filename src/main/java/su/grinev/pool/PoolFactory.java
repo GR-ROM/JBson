@@ -14,14 +14,21 @@ public class PoolFactory {
     private int minPoolSize;
     private int outOfPoolTimeout;
     private boolean blocking;
+    /** Default shard count for pools this factory creates; 1 = unsharded (see {@link FastPool}). */
+    private int shards = 1;
     private final Map<String, Trimmable> pools = new ConcurrentHashMap<>();
     private final AtomicInteger poolCounter = new AtomicInteger(0);
 
     public PoolFactory(int maxPoolSize, int minPoolSize, int outOfPoolTimeout, boolean blocking) {
+        this(maxPoolSize, minPoolSize, outOfPoolTimeout, blocking, 1);
+    }
+
+    public PoolFactory(int maxPoolSize, int minPoolSize, int outOfPoolTimeout, boolean blocking, int shards) {
         this.maxPoolSize = maxPoolSize;
         this.minPoolSize = minPoolSize;
         this.outOfPoolTimeout = outOfPoolTimeout;
         this.blocking = blocking;
+        this.shards = Math.max(1, shards);
     }
 
     public PoolFactory() {
@@ -52,7 +59,16 @@ public class PoolFactory {
      * full pool stays within the memory budget.
      */
     public <T> FastPool<T> getPool(String name, Supplier<T> supplier, int initialSize, int maxSize) {
-        FastPool<T> pool = new FastPool<>(name, supplier, item -> {}, initialSize, maxSize, blocking, outOfPoolTimeout);
+        return getPool(name, supplier, initialSize, maxSize, shards);
+    }
+
+    /**
+     * Create a pool with an explicit shard count, overriding the factory default. Shard only the
+     * pools that several hot threads hit — an unshared pool gains nothing and just spreads its idle
+     * objects thinner.
+     */
+    public <T> FastPool<T> getPool(String name, Supplier<T> supplier, int initialSize, int maxSize, int shards) {
+        FastPool<T> pool = new FastPool<>(name, supplier, item -> {}, initialSize, maxSize, blocking, outOfPoolTimeout, shards);
         pools.put(name, pool);
         return pool;
     }
@@ -81,7 +97,12 @@ public class PoolFactory {
 
     /** Create a disposable pool with an explicit prefill and an explicit per-pool ceiling (see {@link #getPool(String, Supplier, int, int)}). */
     public <T extends Disposable> DisposablePool<T> getDisposablePool(String name, Supplier<T> supplier, int initialSize, int maxSize) {
-        DisposablePool<T> disposablePool = new DisposablePool<>(name, supplier, initialSize, maxSize, blocking, outOfPoolTimeout);
+        return getDisposablePool(name, supplier, initialSize, maxSize, shards);
+    }
+
+    /** Create a disposable pool with an explicit shard count (see {@link #getPool(String, Supplier, int, int, int)}). */
+    public <T extends Disposable> DisposablePool<T> getDisposablePool(String name, Supplier<T> supplier, int initialSize, int maxSize, int shards) {
+        DisposablePool<T> disposablePool = new DisposablePool<>(name, supplier, initialSize, maxSize, blocking, outOfPoolTimeout, shards);
         pools.put(name, disposablePool);
         return disposablePool;
     }
@@ -111,6 +132,16 @@ public class PoolFactory {
 
         public Builder setBlocking(boolean blocking) {
             instance.blocking = blocking;
+            return this;
+        }
+
+        /**
+         * Default shard count for every pool this factory creates (1 = unsharded). Size it to the
+         * number of threads that hit a pool on the hot path; individual pools can override it via
+         * {@link PoolFactory#getPool(String, Supplier, int, int, int)}.
+         */
+        public Builder setShards(int shards) {
+            instance.shards = Math.max(1, shards);
             return this;
         }
 
