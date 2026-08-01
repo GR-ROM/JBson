@@ -162,4 +162,54 @@ public class ArenaByteBufferTest {
         assertEquals(777, b.getBuffer().getInt(0), "content is copied across the growth");
         b.destroy();
     }
+
+    @Test
+    void fixedCapacity_stillAllowsWritesThatFit() {
+        ArenaByteBuffer b = new ArenaByteBuffer(64).fixCapacity();
+        long address = b.address();
+
+        for (int i = 0; i < 16; i++) {
+            b.ensureCapacity(Integer.BYTES);
+            b.getBuffer().putInt(i);
+        }
+
+        assertTrue(b.isFixedCapacity());
+        assertEquals(address, b.address(), "fixing capacity must not change the fitting path");
+        assertEquals(0, b.getBuffer().remaining(), "filled to the last byte without throwing");
+        b.destroy();
+    }
+
+    /**
+     * The point of {@link ArenaByteBuffer#fixCapacity()}: for a buffer sized to a protocol bound, a
+     * growth is a sizing bug, so it must surface instead of silently allocating outside the pool's
+     * direct-memory budget.
+     */
+    @Test
+    void fixedCapacity_throwsInsteadOfGrowing_andLeavesTheBufferIntact() {
+        ArenaByteBuffer b = new ArenaByteBuffer(8).fixCapacity();
+        b.getBuffer().putInt(777); // remaining now 4
+        long address = b.address();
+
+        IllegalStateException e = assertThrows(IllegalStateException.class, () -> b.ensureCapacity(64));
+
+        assertTrue(e.getMessage().contains("64"), "message names the requested size: " + e.getMessage());
+        assertEquals(8, b.capacity(), "a rejected growth must not resize");
+        assertEquals(address, b.address(), "nor reallocate");
+        assertEquals(777, b.getBuffer().getInt(0), "nor disturb the content already written");
+        b.destroy();
+    }
+
+    /** A view stays attached, because the reallocation that would have detached it cannot happen. */
+    @Test
+    void fixedCapacity_keepsDuplicateViewsAttached() {
+        DynamicByteBuffer b = new DynamicByteBuffer(8).fixCapacity();
+        // duplicate() does not inherit the byte order — it is born BIG_ENDIAN regardless of the source.
+        ByteBuffer view = b.duplicate().order(b.order());
+
+        assertThrows(IllegalStateException.class, () -> b.ensureCapacity(64));
+
+        b.putInt(0, 555);
+        assertEquals(555, view.getInt(0), "the view still aliases the buffer's memory");
+        b.destroy();
+    }
 }

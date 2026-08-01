@@ -64,6 +64,7 @@ public class ArenaByteBuffer implements Disposable {
     }
 
     private final Release release;
+    private boolean fixedCapacity;
     private Runnable onDispose;
     private final ArenaHolder holder;          // MANUAL only (null in AUTO)
     private final Cleaner.Cleanable cleanable; // MANUAL only (null in AUTO)
@@ -102,13 +103,43 @@ public class ArenaByteBuffer implements Disposable {
     }
 
     /**
+     * Declares this buffer's capacity final: {@link #ensureCapacity(int)} then throws instead of growing.
+     *
+     * For a buffer whose content is bounded by a protocol (an MTU-sized frame, a TLS record, a chunked
+     * upload), a growth is not a resize — it is the sizing being wrong, and growing hides that. It also
+     * costs more than the allocation: the fresh segment is outside whatever direct-memory budget the
+     * pool ceilings were computed against, and every {@code duplicate()}/{@code slice()} view taken
+     * earlier silently detaches from the buffer it was meant to alias. Opt-in, because a general
+     * serializer writing an unbounded document legitimately needs to grow.
+     *
+     * @return this, so a pool supplier can read {@code () -> new ArenaByteBuffer(n).fixCapacity()}
+     */
+    public ArenaByteBuffer fixCapacity() {
+        this.fixedCapacity = true;
+        return this;
+    }
+
+    /** Whether {@link #ensureCapacity(int)} may grow this buffer. */
+    public boolean isFixedCapacity() {
+        return fixedCapacity;
+    }
+
+    /**
      * Safety net for the rare case where content outgrows the preallocated
      * capacity. A no-op — and zero allocations — while the existing capacity
      * suffices, which is the expected path for a properly sized buffer.
+     *
+     * @throws IllegalStateException if the buffer was declared {@link #fixCapacity() fixed} and the
+     *                               content does not fit
      */
     public void ensureCapacity(int additionalCapacity) {
         if (buffer.remaining() >= additionalCapacity) {
             return;
+        }
+        if (fixedCapacity) {
+            throw new IllegalStateException("fixed-capacity buffer cannot grow: need " + additionalCapacity
+                    + " B, only " + buffer.remaining() + " B left of " + capacity()
+                    + " B (position " + buffer.position() + ")");
         }
         int used = buffer.position();
         int newCapacity = Math.max(capacity() * 2, used + additionalCapacity);

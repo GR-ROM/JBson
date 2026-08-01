@@ -53,6 +53,13 @@ public class DynamicByteBuffer extends ArenaByteBuffer implements Disposable {
         this.originOffset = originOffset;
     }
 
+    /** Covariant override so a {@code Supplier<DynamicByteBuffer>} can chain it — see the supertype. */
+    @Override
+    public DynamicByteBuffer fixCapacity() {
+        super.fixCapacity();
+        return this;
+    }
+
     /** Start offset of the payload within the buffer; header headroom is {@code [0, originOffset)}. */
     public int getOriginOffset() {
         return originOffset;
