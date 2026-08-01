@@ -161,6 +161,19 @@ public class ArenaByteBuffer implements Disposable {
         }
     }
 
+    /**
+     * The backing native segment, for callers that need FFM rather than {@code ByteBuffer} — the
+     * Vector API reads from a segment, and {@code MemorySegment.ofBuffer} on every call would put an
+     * allocation on the hot path. Returned as-is rather than sliced, so offsets match
+     * {@link #getBuffer()}'s absolute indices.
+     *
+     * <p>Follows the buffer across {@link #ensureCapacity}: a grown buffer is a new segment, so do not
+     * cache this across a possible growth (fixed-capacity buffers cannot grow, see {@code fixCapacity}).
+     */
+    public MemorySegment memorySegment() {
+        return segment;
+    }
+
     /** Native base address of the backing segment. */
     public long address() {
         return segment.address();

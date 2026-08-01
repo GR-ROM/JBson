@@ -12,8 +12,11 @@ import java.nio.ByteOrder;
  * is always a no-op. The Java 25 ({@code jbson}) artifact uses FFM {@code Arena} to give MANUAL a real
  * deterministic free.
  *
- * <p>The public API mirrors the Java 25 variant exactly so {@link DynamicByteBuffer} and consumers compile
- * unchanged against either artifact.
+ * <p>The public API mirrors the Java 25 variant so {@link DynamicByteBuffer} and consumers compile
+ * unchanged against either artifact — with one deliberate exception: {@code memorySegment()} does not
+ * exist here. {@code java.lang.foreign} is a preview API at {@code --release 21}, and there is no FFM
+ * segment behind an {@code allocateDirect} buffer to hand out anyway. Code that needs one (the Vector
+ * API checksum) is Java 25 only by construction.
  */
 public class ArenaByteBuffer implements Disposable {
 
