@@ -120,4 +120,35 @@ public class FastPoolTest {
         assertEquals(2, pool.getIdle(), "objects are put back, none lost");
         assertTrue(destroyed.isEmpty(), "nothing destroyed when trim refuses");
     }
+
+    /** Recycling within the ceiling is free — the counter must stay at zero for a well-sized pool. */
+    @Test
+    void droppedOnRelease_staysZero_whileThePoolHasRoom() {
+        FastPool<Object> pool = pool(0, 4, new ArrayList<>());
+
+        for (int i = 0; i < 20; i++) {
+            pool.release(pool.get());
+        }
+
+        assertEquals(0, pool.getDroppedOnRelease(), "every object went back into the pool");
+        assertEquals(1, pool.getIdle());
+    }
+
+    /**
+     * Over the ceiling, release() throws the object away — which is the churn this counter exists to
+     * make visible: the memory becomes garbage and the next get() has to allocate a replacement.
+     */
+    @Test
+    void droppedOnRelease_countsWhatTheCeilingRefuses() {
+        FastPool<Object> pool = pool(0, 2, new ArrayList<>());
+        List<Object> borrowed = new ArrayList<>();
+        for (int i = 0; i < 5; i++) {
+            borrowed.add(pool.get());
+        }
+
+        borrowed.forEach(pool::release);
+
+        assertEquals(2, pool.getIdle(), "the ceiling is what the pool keeps");
+        assertEquals(3, pool.getDroppedOnRelease(), "the other three were dropped on the floor");
+    }
 }

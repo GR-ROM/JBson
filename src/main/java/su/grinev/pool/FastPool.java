@@ -10,6 +10,7 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
@@ -64,6 +65,12 @@ public class FastPool<T> implements Trimmable {
     private final Semaphore permits;            // non-null only when blocking — enforces the in-flight limit
     private final AtomicInteger isUse = new AtomicInteger(0);
     private final AtomicLong totalCreated = new AtomicLong(0);
+    // Objects dropped by release() because every shard was full, i.e. the pool is over its idle
+    // ceiling. Each drop costs twice: the object's memory is garbage until the GC runs, and the next
+    // get() has to allocate a replacement — so a pool that is churning shows up as this counter
+    // climbing while getCurrentPoolSize() sits pinned at the ceiling. Nothing recorded it before,
+    // which made "is this pool sized right?" unanswerable from the outside.
+    private final LongAdder droppedOnRelease = new LongAdder();
 
     // Shard affinity: assigned once per thread, round-robin, so the first `shards` threads to touch
     // the pool land on distinct shards. Resolved with a ThreadLocal rather than (threadId % shards)
@@ -243,15 +250,30 @@ public class FastPool<T> implements Trimmable {
      */
     private void offerToShards(T item) {
         int own = shardIndex.get();
-        if (shardQueues[own].offer(item) || shards == 1) {
+        if (shardQueues[own].offer(item)) {
             return;
         }
-        for (int i = 1; i < shards; i++) {
-            if (shardQueues[(own + i) % shards].offer(item)) {
-                return;
+        // The sibling scan is what "shards > 1" buys; unsharded, a full own shard is already the end
+        // of the line. Written as a guarded loop rather than an early `|| shards == 1` return so that
+        // both cases fall through to the same drop accounting below.
+        if (shards > 1) {
+            for (int i = 1; i < shards; i++) {
+                if (shardQueues[(own + i) % shards].offer(item)) {
+                    return;
+                }
             }
         }
         // Every shard full: the pool is over its idle ceiling, drop the object on the floor.
+        droppedOnRelease.increment();
+    }
+
+    /**
+     * How many objects {@link #release} has thrown away because the pool was already at its idle
+     * ceiling. Steadily non-zero means the ceiling is below the real in-flight demand: the pool is
+     * allocating and discarding on the hot path instead of recycling.
+     */
+    public long getDroppedOnRelease() {
+        return droppedOnRelease.sum();
     }
 
     // --- Trimmable ---
