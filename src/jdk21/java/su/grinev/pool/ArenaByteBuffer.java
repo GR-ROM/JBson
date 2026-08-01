@@ -20,6 +20,7 @@ public class ArenaByteBuffer implements Disposable {
     /** Native-memory reclamation strategy. On Java 21 both modes are GC-managed (auto only). */
     public enum Release { AUTO, MANUAL }
 
+    private boolean fixedCapacity;
     private Runnable onDispose;
     protected ByteBuffer buffer;
 
@@ -39,19 +40,47 @@ public class ArenaByteBuffer implements Disposable {
     }
 
     /**
+     * Declares this buffer's capacity final: {@link #ensureCapacity(int)} then throws instead of growing.
+     * See the Java 25 variant for the rationale — the API must mirror it exactly so consumers compile
+     * against either artifact.
+     *
+     * @return this, so a pool supplier can read {@code () -> new ArenaByteBuffer(n).fixCapacity()}
+     */
+    public ArenaByteBuffer fixCapacity() {
+        this.fixedCapacity = true;
+        return this;
+    }
+
+    /** Whether {@link #ensureCapacity(int)} may grow this buffer. */
+    public boolean isFixedCapacity() {
+        return fixedCapacity;
+    }
+
+    /**
      * Safety net for the rare case where content outgrows the preallocated capacity: allocate a larger
      * direct buffer, copy the content over, and let the GC reclaim the old one.
+     *
+     * @throws IllegalStateException if the buffer was declared {@link #fixCapacity() fixed} and the
+     *                               content does not fit
      */
     public void ensureCapacity(int additionalCapacity) {
         if (buffer.remaining() >= additionalCapacity) {
             return;
+        }
+        if (fixedCapacity) {
+            throw new IllegalStateException("fixed-capacity buffer cannot grow: need " + additionalCapacity
+                    + " B, only " + buffer.remaining() + " B left of " + capacity()
+                    + " B (position " + buffer.position() + ")");
         }
         int used = buffer.position();
         int newCapacity = Math.max(capacity() * 2, used + additionalCapacity);
 
         ByteBuffer src = buffer.duplicate();
         src.position(0).limit(used);
-        ByteBuffer grown = ByteBuffer.allocateDirect(newCapacity).order(ByteOrder.LITTLE_ENDIAN);
+        // Preserve the caller's byte order: msgpack writes BIG_ENDIAN, BSON LITTLE_ENDIAN — hardcoding LE
+        // here silently flips the order of a big-endian stream mid-write. The Java 25 variant already
+        // does this; the jdk21 one did not, and its tests never ran (CI publishes it without `build`).
+        ByteBuffer grown = ByteBuffer.allocateDirect(newCapacity).order(buffer.order());
         grown.put(src);             // copies [0, used); leaves grown.position() == used
         this.buffer = grown;        // old direct buffer becomes unreachable -> GC reclaims it
     }
