@@ -79,10 +79,24 @@ public class FastPool<T> implements Trimmable {
     private final AtomicInteger shardCursor = new AtomicInteger(0);
     private final ThreadLocal<Integer> shardIndex;   // assigned in the constructor: needs `shards`
 
+    /**
+     * Runtime leak detection: watches a sample of checkouts and reports any object the GC collects
+     * before it was returned (see {@link LeakDetector}). Null when detection is disabled, so the whole
+     * mechanism costs one null check per get/release.
+     *
+     * <p>Only objects that can carry their own tracker participate — the tracker rides on the object
+     * instead of in a side map, because a per-release identity lookup is exactly the kind of hot-path
+     * cost a buffer pool exists to avoid. In practice that means the arena-backed buffers; a pool of
+     * plain {@code ByteBuffer} still gets the counters, just not the leak reports.
+     */
+    private final LeakDetector leakDetector;
+
     // Debug: per-buffer checkout tracking to localize double-release / double-handout (buffer-ownership bugs).
     // Enabled with -Dfastpool.track=true (off by default — the identity-set ops add per-get/release lock overhead).
     private static final Logger log = LoggerFactory.getLogger(FastPool.class);
     private static final boolean TRACK = Boolean.getBoolean("fastpool.track");
+    /** See {@link LeakDetector#quarantineEnabled()} — off unless someone is hunting an ownership bug. */
+    private static final boolean QUARANTINE = LeakDetector.quarantineEnabled();
     private final Set<T> checkedOut = TRACK ? Collections.synchronizedSet(Collections.newSetFromMap(new IdentityHashMap<>())) : null;
 
     /** Unsharded (shards = 1) — the historical behaviour. */
@@ -113,6 +127,8 @@ public class FastPool<T> implements Trimmable {
         this.shardIndex = shardCount == 1
                 ? ThreadLocal.withInitial(() -> 0)
                 : ThreadLocal.withInitial(() -> Math.floorMod(shardCursor.getAndIncrement(), shardCount));
+
+        this.leakDetector = LeakDetector.isEnabled() ? new LeakDetector("pool '" + name + "'") : null;
 
         int perShard = Math.max(1, (Math.max(maxSize, 1) + this.shards - 1) / this.shards);
         this.shardQueues = new ArrayBlockingQueue[this.shards];
@@ -165,6 +181,12 @@ public class FastPool<T> implements Trimmable {
         if (item == null) {
             totalCreated.incrementAndGet();
             item = supplier.get();
+        }
+        if (item instanceof ArenaByteBuffer buffer) {
+            // Re-arms the reference count for this checkout (and starts watching, if a detector is
+            // configured). Unconditional on purpose: recycling drove the count to zero, so a buffer
+            // handed out without this would be dead on arrival and its first dispose() would throw.
+            buffer.reviveForCheckout(leakDetector);
         }
         if (checkedOut != null && !checkedOut.add(item)) {
             // Same buffer handed out while already checked out -> it sat in the queue twice,
@@ -220,6 +242,9 @@ public class FastPool<T> implements Trimmable {
      * fail-fast behaviour (throw {@link IllegalStateException}) — useful in tests/CI.
      */
     public void release(T item) {
+        if (item instanceof ArenaByteBuffer buffer) {
+            buffer.checkedIn();
+        }
         if (checkedOut != null && !checkedOut.remove(item)) {
             // Releasing a buffer that is NOT currently checked out -> it was already released
             // (double-release / double-dispose). This stack is the second, offending release site.
@@ -237,7 +262,13 @@ public class FastPool<T> implements Trimmable {
             }
             return;
         }
-        offerToShards(item);
+        if (QUARANTINE && item instanceof ArenaByteBuffer buffer) {
+            // Destroyed, not recycled: nothing else may ever be handed this memory, so a stale
+            // reference cannot quietly become a second owner of a live packet.
+            buffer.invalidate();
+        } else {
+            offerToShards(item);
+        }
         if (permits != null) {
             permits.release();
         }
@@ -355,5 +386,19 @@ public class FastPool<T> implements Trimmable {
 
     public long getTotalCreated() {
         return totalCreated.get();
+    }
+
+    /**
+     * Objects this pool handed out that were garbage-collected before being returned. Anything but
+     * zero is a bug in a caller — and worth a metric, because the symptom otherwise looks like a
+     * healthy pool sitting at its ceiling while it allocates a replacement per checkout.
+     */
+    public long getLeakCount() {
+        return leakDetector == null ? 0 : leakDetector.leakCount();
+    }
+
+    /** The detector watching this pool, or null when leak detection is disabled. Visible for tests. */
+    LeakDetector leakDetector() {
+        return leakDetector;
     }
 }

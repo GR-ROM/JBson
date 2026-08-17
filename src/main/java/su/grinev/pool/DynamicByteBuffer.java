@@ -15,7 +15,6 @@ import java.nio.ByteOrder;
  * if {@code ensureCapacity} reallocates — prefer calling through this class.
  */
 public class DynamicByteBuffer extends ArenaByteBuffer implements Disposable {
-    private Runnable onDispose;
 
     // Framing headroom (opt-in, set only via the origin-offset constructor). The payload is written
     // starting at originOffset, reserving [0, originOffset) so a protocol header can be spliced in place
@@ -296,26 +295,11 @@ public class DynamicByteBuffer extends ArenaByteBuffer implements Disposable {
         return buffer.slice();
     }
 
-    @Override
-    public void setOnDispose(Runnable onDispose) {
-        this.onDispose = onDispose;
-    }
-
-    @Override
-    public Runnable getOnDispose() {
-        return onDispose;
-    }
-
-    @Override
-    public void dispose() {
-        this.onDispose.run();
-    }
-
-    // destroy() is inherited from ArenaByteBuffer: it closes the arena (deterministic free).
-    // A Cleaner in ArenaByteBuffer also closes the arena if the buffer is dropped without destroy().
-
-    @Override
-    public void close() {
-        dispose();
-    }
+    // setOnDispose/getOnDispose/dispose/close are all inherited from ArenaByteBuffer. They used to be
+    // overridden here against a second, shadowing onDispose field — harmless while the three overrides
+    // agreed with each other, but the base class now recycles through the reference count, and an
+    // override that ran the hook directly would have skipped it.
+    //
+    // destroy() is inherited too: it closes the arena (deterministic free). A Cleaner in
+    // ArenaByteBuffer also closes the arena if the buffer is dropped without destroy().
 }
