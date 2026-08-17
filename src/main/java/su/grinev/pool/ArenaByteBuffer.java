@@ -1,10 +1,10 @@
 package su.grinev.pool;
 
-import lombok.Getter;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.ref.Cleaner;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
@@ -34,7 +34,7 @@ import java.nio.ByteOrder;
  *
  * {@link #dispose()} recycles the buffer back to its pool — orthogonal to the release mode.
  */
-public class ArenaByteBuffer implements Disposable {
+public class ArenaByteBuffer implements Disposable, RefCounted {
 
     /** Native-memory reclamation strategy. */
     public enum Release { AUTO, MANUAL }
@@ -70,8 +70,21 @@ public class ArenaByteBuffer implements Disposable {
     private final Cleaner.Cleanable cleanable; // MANUAL only (null in AUTO)
     private Arena arena;
     private MemorySegment segment;
-    @Getter
+
+    /**
+     * Owners holding this buffer. One at birth and one after every checkout: a buffer that came from
+     * a pool has exactly one owner until somebody says otherwise. Recycling is driven from here, not
+     * from the {@code dispose()} call site, which is what makes a second consumer expressible at all.
+     */
+    private final AtomicInteger refCnt = new AtomicInteger(1);
+    /** Non-null while the leak detector is watching this checkout — see {@link LeakDetector}. */
+    private LeakTracker leakTracker;
     protected ByteBuffer buffer;
+    /** Set by {@link #invalidate()}; only ever true in quarantine mode. */
+    private boolean invalidated;
+
+    /** What an invalidated buffer points at: any access to it fails, which is the whole idea. */
+    private static final ByteBuffer DEAD = ByteBuffer.allocate(0);
 
     /** GC-managed (AUTO) buffer — the safe default. */
     public ArenaByteBuffer(int capacity) {
@@ -184,6 +197,109 @@ public class ArenaByteBuffer implements Disposable {
         return segment.scope().isAlive();
     }
 
+    // ---- reference counting -------------------------------------------------
+
+    @Override
+    public int refCnt() {
+        return refCnt.get();
+    }
+
+    @Override
+    public ArenaByteBuffer retain() {
+        int current = refCnt.getAndIncrement();
+        if (current <= 0) {
+            // Already recycled: the buffer this caller thinks it is sharing may already belong to
+            // someone else. Undo and fail here rather than hand out a second owner of a live buffer.
+            refCnt.decrementAndGet();
+            throw new IllegalReferenceCountException("retain() on a buffer already returned to the pool");
+        }
+        return this;
+    }
+
+    @Override
+    public boolean release() {
+        int remaining = refCnt.decrementAndGet();
+        if (remaining > 0) {
+            return false;
+        }
+        if (remaining < 0) {
+            refCnt.incrementAndGet();
+            throw new IllegalReferenceCountException(0, 1);
+        }
+        recycle();
+        return true;
+    }
+
+    @Override
+    public ArenaByteBuffer touch(Object hint) {
+        LeakTracker tracker = leakTracker;
+        if (tracker != null) {
+            tracker.record(hint);
+        }
+        return this;
+    }
+
+    /**
+     * The backing buffer.
+     *
+     * <p>The check is folded away unless quarantine is on, and exists so a stale access reports what
+     * actually happened instead of an {@link IndexOutOfBoundsException} from the zero-length stand-in.
+     */
+    public ByteBuffer getBuffer() {
+        if (LeakDetector.quarantineEnabled() && invalidated) {
+            throw new IllegalReferenceCountException(
+                    "use after release: this buffer was returned to its pool and destroyed "
+                            + "(quarantine mode). Whoever still holds a reference to it should not.");
+        }
+        return buffer;
+    }
+
+    /**
+     * Kills the buffer instead of recycling it: the memory is freed and the facade is pointed at a
+     * zero-length stand-in, so every later access fails — through {@link #getBuffer()} with an
+     * explanation, and through the delegating methods with a bounds error at the offending line.
+     *
+     * <p>Only ever called in quarantine mode, by the pool, in place of returning the object to a
+     * shard. Not reversible: a quarantined buffer is never handed out again, which is exactly what
+     * makes a stale write impossible to mistake for a valid one.
+     */
+    void invalidate() {
+        invalidated = true;
+        this.buffer = DEAD;
+        destroy();
+    }
+
+    /** Hands the buffer back to its pool. Called only when the last owner let go. */
+    private void recycle() {
+        LeakTracker tracker = leakTracker;
+        if (tracker != null) {
+            leakTracker = null;
+            tracker.close();
+        }
+        if (onDispose != null) {
+            onDispose.run();
+        }
+    }
+
+    /**
+     * Re-arms the buffer for a new owner as it leaves the pool, and starts watching it. Called by the
+     * pool, never by application code — a buffer that is already checked out has a live owner, and
+     * resetting the count under them is how two owners end up believing they are the only one.
+     */
+    void reviveForCheckout(LeakDetector detector) {
+        refCnt.set(1);
+        this.leakTracker = detector == null ? null : detector.track(this);
+    }
+
+    /** Closes the leak tracker when the pool takes the buffer back without going through release(). */
+    void checkedIn() {
+        LeakTracker tracker = leakTracker;
+        if (tracker != null) {
+            leakTracker = null;
+            tracker.close();
+        }
+    }
+
     @Override
     public void setOnDispose(Runnable onDispose) {
         this.onDispose = onDispose;
@@ -194,11 +310,14 @@ public class ArenaByteBuffer implements Disposable {
         return onDispose;
     }
 
+    /**
+     * Drops this owner's claim. Identical to {@link #release()} for the single-owner case that every
+     * existing call site is, and the reason the two are not one method is that {@code dispose()}
+     * predates reference counting and reads as "I am done with this" at hundreds of call sites.
+     */
     @Override
     public void dispose() {
-        if (onDispose != null) {
-            onDispose.run();
-        }
+        release();
     }
 
     @Override

@@ -153,8 +153,18 @@ test {
     useJUnitPlatform()
     // FFM Arena uses restricted native methods; allow them without the runtime warning.
     jvmArgs '--enable-native-access=ALL-UNNAMED'
+    // Tests run PARANOID: every pooled checkout is watched, so a test that drops a buffer says so
+    // instead of leaving it for a load run to notice. It costs ~2.3 kB of garbage per checkout, which
+    // is irrelevant to a test and unthinkable in production — production runs SIMPLE (the library
+    // default), where a checkout costs 0.6 bytes. Override for a run with -Pleak=simple|advanced|disabled.
+    // The level is read once at class-init, which is also why the allocation budget test reports the
+    // level it measured under rather than trying to vary it.
+    systemProperty 'jbson.leakDetection', project.findProperty('leak') ?: 'paranoid'
     // The multi-second chaos/stress storm is not run as part of the normal suite — use `gradle chaos`.
     exclude '**/*ChaosTest*'
+    // Quarantine turns off reuse, which is the behaviour most of these tests assert — it gets its
+    // own JVM with its own property. Use `gradle quarantine`.
+    exclude '**/*QuarantineTest*'
     if (jdk21) {
         // These assert FFM deterministic free / native address() — Java 25 (MANUAL) only.
         exclude '**/ArenaByteBufferTest*', '**/DisposablePoolArenaTrimTest*', '**/PoolOptimizerIntegrationTest*'
@@ -173,6 +183,26 @@ task chaos(type: Test) {
     testClassesDirs = sourceSets.test.output.classesDirs
     classpath = sourceSets.test.runtimeClasspath
     include '**/*ChaosTest*'
+    outputs.upToDateWhen { false }
+    testLogging {
+        showStandardStreams = true
+        events 'passed', 'failed'
+    }
+}
+
+// Pool quarantine: released buffers are destroyed instead of recycled, so a use-after-release
+// throws at the offending line instead of corrupting whoever got the buffer next. Its own task
+// because the mode deliberately breaks pooling, which the rest of the suite asserts.
+task quarantine(type: Test) {
+    description = 'Runs the pool quarantine tests (released buffers are destroyed, never reused).'
+    group = 'verification'
+    useJUnitPlatform()
+    jvmArgs '--enable-native-access=ALL-UNNAMED'
+    systemProperty 'jbson.pool.quarantine', 'true'
+    systemProperty 'jbson.leakDetection', project.findProperty('leak') ?: 'paranoid'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    include '**/*QuarantineTest*'
     outputs.upToDateWhen { false }
     testLogging {
         showStandardStreams = true
