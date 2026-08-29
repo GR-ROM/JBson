@@ -3,14 +3,10 @@ package su.grinev;
 import org.junit.jupiter.api.Test;
 import su.grinev.messagepack.MessagePackReader;
 import su.grinev.messagepack.MessagePackWriter;
-import su.grinev.messagepack.ReaderContext;
-import su.grinev.messagepack.WriterContext;
 import su.grinev.pool.DynamicByteBuffer;
-import su.grinev.pool.FastPool;
 import su.grinev.pool.PoolFactory;
 
 import java.nio.ByteBuffer;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -30,13 +26,9 @@ public class MessagePackMapperTests {
                 .setBlocking(true)
                 .build();
 
-        FastPool<ReaderContext> readerContextPool = poolFactory.getPool(ReaderContext::new);
-        FastPool<ArrayDeque<ReaderContext>> stackPool = poolFactory.getPool(() -> new ArrayDeque<>(64));
-        FastPool<WriterContext> writerContextPool = poolFactory.getPool(WriterContext::new);
 
-        FastPool<ArrayDeque<WriterContext>> writerStackPool = poolFactory.getPool(() -> new ArrayDeque<>(16));
-        MessagePackWriter writer = new MessagePackWriter(writerContextPool, writerStackPool);
-        MessagePackReader reader = new MessagePackReader(readerContextPool, stackPool, false, false);
+        MessagePackWriter writer = new MessagePackWriter();
+        MessagePackReader reader = new MessagePackReader(false, false);
 
         byte[] packet = new byte[1024];
         for (int i = 0; i < packet.length; i++) {
@@ -75,13 +67,9 @@ public class MessagePackMapperTests {
                 .setOutOfPoolTimeout(1000)
                 .build();
 
-        FastPool<ReaderContext> readerContextPool = poolFactory.getPool(ReaderContext::new);
-        FastPool<ArrayDeque<ReaderContext>> stackPool = poolFactory.getPool(() -> new ArrayDeque<>(64));
-        FastPool<WriterContext> writerContextPool = poolFactory.getPool(WriterContext::new);
 
-        FastPool<ArrayDeque<WriterContext>> writerStackPool = poolFactory.getPool(() -> new ArrayDeque<>(16));
-        MessagePackWriter writer = new MessagePackWriter(writerContextPool, writerStackPool);
-        MessagePackReader reader = new MessagePackReader(readerContextPool, stackPool, true, true);
+        MessagePackWriter writer = new MessagePackWriter();
+        MessagePackReader reader = new MessagePackReader(true, true);
 
         // Create 128KB payload
         byte[] packet = new byte[128 * 1024];
@@ -163,13 +151,9 @@ public class MessagePackMapperTests {
                 .setOutOfPoolTimeout(1000)
                 .build();
 
-        FastPool<ReaderContext> readerContextPool = poolFactory.getPool(ReaderContext::new);
-        FastPool<ArrayDeque<ReaderContext>> stackPool = poolFactory.getPool(() -> new ArrayDeque<>(64));
-        FastPool<WriterContext> writerContextPool = poolFactory.getPool(WriterContext::new);
 
-        FastPool<ArrayDeque<WriterContext>> writerStackPool = poolFactory.getPool(() -> new ArrayDeque<>(16));
-        MessagePackWriter writer = new MessagePackWriter(writerContextPool, writerStackPool);
-        MessagePackReader reader = new MessagePackReader(readerContextPool, stackPool, true, true);
+        MessagePackWriter writer = new MessagePackWriter();
+        MessagePackReader reader = new MessagePackReader(true, true);
 
         // Create 1000 nested objects
         Map<Object, Object> fields = new HashMap<>();

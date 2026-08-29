@@ -6,14 +6,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import su.grinev.messagepack.MessagePackReader;
 import su.grinev.messagepack.MessagePackWriter;
-import su.grinev.messagepack.ReaderContext;
-import su.grinev.messagepack.WriterContext;
 import su.grinev.pool.DynamicByteBuffer;
-import su.grinev.pool.FastPool;
-import su.grinev.pool.PoolFactory;
 
 import java.nio.ByteBuffer;
-import java.util.ArrayDeque;
 import java.util.HashMap;
 import java.util.Map;
 

@@ -30,7 +30,9 @@ public final class WriterContext {
             Map<Object, Object> value
     ) {
         writerContext.lengthPos = lengthPos;
-        writerContext.mapIterator = value.entrySet().iterator();
+        writerContext.mapIterator = value instanceof su.grinev.messagepack.CompactMap cm
+                ? cm.entryIterator()
+                : value.entrySet().iterator();
         writerContext.arrayList = null;
         writerContext.arrayIndex = 0;
         writerContext.isArray = false;

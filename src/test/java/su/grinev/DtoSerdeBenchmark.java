@@ -16,8 +16,6 @@ import su.grinev.json.JsonReader;
 import su.grinev.json.JsonWriter;
 import su.grinev.messagepack.MessagePackReader;
 import su.grinev.messagepack.MessagePackWriter;
-import su.grinev.messagepack.ReaderContext;
-import su.grinev.messagepack.WriterContext;
 import su.grinev.pool.DynamicByteBuffer;
 import su.grinev.pool.PoolFactory;
 import su.grinev.proto.BlockingsProto;
@@ -27,7 +25,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.nio.ByteBuffer;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -96,8 +93,8 @@ public class DtoSerdeBenchmark {
         bsonWriter = new BsonObjectWriter(pf, BUF, true);
         bsonReader = new BsonObjectReader(pf, BUF, true, () -> ByteBuffer.allocateDirect(4096));
 
-        msgpackWriter = new MessagePackWriter(pf.getPool(WriterContext::new), pf.getPool(() -> new ArrayDeque<>(16)));
-        msgpackReader = new MessagePackReader(pf.getPool(ReaderContext::new), pf.getPool(() -> new ArrayDeque<>(64)), true, true);
+        msgpackWriter = new MessagePackWriter();
+        msgpackReader = new MessagePackReader(true, true);
 
         LZ4Factory f = LZ4Factory.fastestInstance();
         lz4Compressor = f.fastCompressor();

@@ -7,11 +7,8 @@ import org.openjdk.jmh.runner.options.Options;
 import org.openjdk.jmh.runner.options.OptionsBuilder;
 import su.grinev.messagepack.MessagePackReader;
 import su.grinev.messagepack.MessagePackWriter;
-import su.grinev.messagepack.ReaderContext;
-import su.grinev.messagepack.WriterContext;
 import su.grinev.pool.DisposablePool;
 import su.grinev.pool.DynamicByteBuffer;
-import su.grinev.pool.FastPool;
 import su.grinev.pool.PoolFactory;
 
 import java.nio.ByteBuffer;
@@ -45,14 +42,10 @@ public class MessagePackBenchmark {
                 .setOutOfPoolTimeout(1000)
                 .build();
 
-        FastPool<ReaderContext> readerContextPool = poolFactory.getPool(ReaderContext::new);
-        FastPool<ArrayDeque<ReaderContext>> stackPool = poolFactory.getPool(() -> new ArrayDeque<>(64));
-        FastPool<WriterContext> writerContextPool = poolFactory.getPool(WriterContext::new);
-        FastPool<ArrayDeque<WriterContext>> writerStackPool = poolFactory.getPool(() -> new ArrayDeque<>(16));
         bufferPool = poolFactory.getDisposablePool(() -> new DynamicByteBuffer(256 * 1024, true));
 
-        messagePackWriter = new MessagePackWriter(writerContextPool, writerStackPool);
-        messagePackReader = new MessagePackReader(readerContextPool, stackPool, false, false);
+        messagePackWriter = new MessagePackWriter();
+        messagePackReader = new MessagePackReader(false, false);
 
         // Create document with 128KB binary payload
         byte[] largePayload = new byte[128 * 1024];

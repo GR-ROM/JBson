@@ -5,19 +5,14 @@ import su.grinev.bson.BsonObjectReader;
 import su.grinev.bson.BsonObjectWriter;
 import su.grinev.messagepack.MessagePackReader;
 import su.grinev.messagepack.MessagePackWriter;
-import su.grinev.messagepack.ReaderContext;
-import su.grinev.messagepack.WriterContext;
 import su.grinev.pool.DisposablePool;
 import su.grinev.pool.DynamicByteBuffer;
-import su.grinev.pool.FastPool;
 import su.grinev.pool.PoolFactory;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
-import java.util.ArrayDeque;
-import java.util.HashMap;
 import java.util.function.Supplier;
 
 @Getter
@@ -66,14 +61,10 @@ public class Codec {
      *                          collection your protocol legitimately uses to bound decode allocation.
      */
     public static Codec messagePack(PoolFactory poolFactory, int documentSize, Binder.ClassNameMode classNameMode, int maxCollectionSize) {
-        FastPool<WriterContext> writerContextPool = poolFactory.getPool("msgpack-writer-context-pool", WriterContext::new);
-        FastPool<ReaderContext> readerContextPool = poolFactory.getPool("msgpack-reader-context-pool", ReaderContext::new);
-        FastPool<ArrayDeque<ReaderContext>> readerStackPool = poolFactory.getPool("msgpack-reader-stack-pool", () -> new ArrayDeque<>(64));
-        FastPool<ArrayDeque<WriterContext>> writerStackPool = poolFactory.getPool("msgpack-writer-stack-pool", () -> new ArrayDeque<>(64));
-        MessagePackWriter writer = new MessagePackWriter(writerContextPool, writerStackPool);
+        MessagePackWriter writer = new MessagePackWriter();
         MessagePackReader reader = maxCollectionSize > 0
-                ? new MessagePackReader(readerContextPool, readerStackPool, true, true, maxCollectionSize)
-                : new MessagePackReader(readerContextPool, readerStackPool, true, true);
+                ? new MessagePackReader(true, true, maxCollectionSize)
+                : new MessagePackReader(true, true);
         DisposablePool<DynamicByteBuffer> pool = poolFactory.getDisposablePool("codec-buffer-pool", () -> new DynamicByteBuffer(documentSize, true));
         return new Codec(writer, reader, pool, classNameMode);
     }
@@ -86,9 +77,7 @@ public class Codec {
     }
 
     public <T> T deserialize(ByteBuffer buffer, Class<T> tClass) {
-        BinaryDocument document = new BinaryDocument(new HashMap<>());
-        deserializer.deserialize(buffer, document);
-        return binder.bind(tClass, document);
+        return binder.bind(tClass, deserializer.deserialize(buffer));
     }
 
     public void serialize(Object o, OutputStream outputStream) throws IOException {

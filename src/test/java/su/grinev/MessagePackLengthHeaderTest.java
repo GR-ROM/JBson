@@ -9,14 +9,10 @@ import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 import su.grinev.messagepack.MessagePackReader;
 import su.grinev.messagepack.MessagePackWriter;
-import su.grinev.messagepack.ReaderContext;
-import su.grinev.messagepack.WriterContext;
 import su.grinev.pool.DynamicByteBuffer;
-import su.grinev.pool.FastPool;
 import su.grinev.pool.PoolFactory;
 
 import java.nio.ByteBuffer;
-import java.util.ArrayDeque;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -39,10 +35,6 @@ public class MessagePackLengthHeaderTest {
             .setBlocking(false)
             .build();
 
-    private final FastPool<ReaderContext> readerContextPool = poolFactory.getPool(ReaderContext::new);
-    private final FastPool<ArrayDeque<ReaderContext>> stackPool = poolFactory.getPool(() -> new ArrayDeque<>(64));
-    private final FastPool<WriterContext> writerContextPool = poolFactory.getPool(WriterContext::new);
-    private final FastPool<ArrayDeque<WriterContext>> writerStackPool = poolFactory.getPool(() -> new ArrayDeque<>(16));
 
     private Logger readerLogger;
     private ListAppender<ILoggingEvent> appender;
@@ -61,7 +53,7 @@ public class MessagePackLengthHeaderTest {
     }
 
     private ByteBuffer serialize(Map<Object, Object> map) {
-        MessagePackWriter writer = new MessagePackWriter(writerContextPool, writerStackPool);
+        MessagePackWriter writer = new MessagePackWriter();
         DynamicByteBuffer buffer = new DynamicByteBuffer(64 * 1024, true);
         writer.serialize(buffer, new BinaryDocument(map));
         ByteBuffer src = buffer.getBuffer();              // flipped: position 0, limit = frame length
@@ -95,7 +87,7 @@ public class MessagePackLengthHeaderTest {
         int secondFrameOffset = combined.limit() - f2.capacity();
         assertTrue(secondFrameOffset > 0, "second frame must start at a non-zero offset");
 
-        MessagePackReader reader = new MessagePackReader(readerContextPool, stackPool, false, false);
+        MessagePackReader reader = new MessagePackReader(false, false);
 
         BinaryDocument d1 = new BinaryDocument(new HashMap<>());
         reader.deserialize(combined, d1);                 // frame 1 at offset 0

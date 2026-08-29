@@ -12,8 +12,6 @@ import su.grinev.json.JsonReader;
 import su.grinev.json.JsonWriter;
 import su.grinev.messagepack.MessagePackReader;
 import su.grinev.messagepack.MessagePackWriter;
-import su.grinev.messagepack.ReaderContext;
-import su.grinev.messagepack.WriterContext;
 import su.grinev.pool.DynamicByteBuffer;
 import su.grinev.pool.PoolFactory;
 import su.grinev.proto.PayloadProto;
@@ -21,7 +19,6 @@ import su.grinev.test.VpnForwardPacketDto;
 import su.grinev.test.VpnRequestDto;
 
 import java.nio.ByteBuffer;
-import java.util.ArrayDeque;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
@@ -63,6 +60,7 @@ public class IpPacketSerdeBenchmark {
     private byte[] jsonBytes;
     private byte[] bsonBytes;
     private byte[] msgpackBytes;
+    private ByteBuffer msgpackWire;
     private byte[] protoBytes;
 
     private DynamicByteBuffer bsonReuseBuf;
@@ -82,8 +80,8 @@ public class IpPacketSerdeBenchmark {
         bsonWriter = new BsonObjectWriter(pf, BUF, true);
         bsonReader = new BsonObjectReader(pf, BUF, true, () -> ByteBuffer.allocateDirect(BUF));
         bsonReader.setReadBinaryAsByteArray(false);
-        msgpackWriter = new MessagePackWriter(pf.getPool(WriterContext::new), pf.getPool(() -> new ArrayDeque<>(16)));
-        msgpackReader = new MessagePackReader(pf.getPool(ReaderContext::new), pf.getPool(() -> new ArrayDeque<>(64)), true, true);
+        msgpackWriter = new MessagePackWriter();
+        msgpackReader = new MessagePackReader(true, true);
 
         Binder binder = new Binder(Binder.ClassNameMode.FULL_NAME);
 
@@ -134,6 +132,7 @@ public class IpPacketSerdeBenchmark {
         mb.getBuffer().get(msgpackBytes);
 
         protoBytes = protoDto.toByteArray();
+        msgpackWire = ByteBuffer.wrap(msgpackBytes);
 
         bsonReuseBuf = new DynamicByteBuffer(BUF, true);
         mpReuseBuf = new DynamicByteBuffer(BUF, true);
@@ -186,6 +185,14 @@ public class IpPacketSerdeBenchmark {
 
     @Benchmark
     public BinaryDocument msgpack_deserialize() {
+        // Library-only cost: the wire buffer is wrapped once in setup and rewound per op, and the
+        // reader hands back its reusable per-thread document (the Codec path does the same).
+        msgpackWire.rewind();
+        return msgpackReader.deserialize(msgpackWire);
+    }
+
+    @Benchmark
+    public BinaryDocument msgpack_deserialize_hashMapRoot() {
         BinaryDocument d = new BinaryDocument(new HashMap<>());
         msgpackReader.deserialize(ByteBuffer.wrap(msgpackBytes), d);
         return d;
