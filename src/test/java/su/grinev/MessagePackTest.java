@@ -3,7 +3,6 @@ package su.grinev;
 import org.junit.jupiter.api.Test;
 import su.grinev.messagepack.*;
 import su.grinev.pool.DynamicByteBuffer;
-import su.grinev.pool.FastPool;
 import su.grinev.pool.PoolFactory;
 
 import java.nio.ByteBuffer;
@@ -21,14 +20,10 @@ public class MessagePackTest {
             .setBlocking(false)
             .build();
 
-    private final FastPool<ReaderContext> readerContextPool = poolFactory.getPool(ReaderContext::new);
-    private final FastPool<ArrayDeque<ReaderContext>> stackPool = poolFactory.getPool(() -> new ArrayDeque<>(64));
-    private final FastPool<WriterContext> writerContextPool = poolFactory.getPool(WriterContext::new);
-    private final FastPool<ArrayDeque<WriterContext>> writerStackPool = poolFactory.getPool(() -> new ArrayDeque<>(16));
 
     @Test
     public void serializeSimpleMap() {
-        MessagePackWriter writer = new MessagePackWriter(writerContextPool, writerStackPool);
+        MessagePackWriter writer = new MessagePackWriter();
 
         Map<Object, Object> map = new HashMap<>();
         map.put(0, 42);
@@ -38,7 +33,7 @@ public class MessagePackTest {
         writer.serialize(buffer, new BinaryDocument(map));
         ByteBuffer buf = buffer.getBuffer();
 
-        MessagePackReader reader = new MessagePackReader(readerContextPool, stackPool, false, false);
+        MessagePackReader reader = new MessagePackReader(false, false);
         BinaryDocument deserialized = new BinaryDocument(new HashMap<>());
         reader.deserialize(buf, deserialized);
 
@@ -48,7 +43,7 @@ public class MessagePackTest {
 
     @Test
     public void serializeNestedMap() {
-        MessagePackWriter writer = new MessagePackWriter(writerContextPool, writerStackPool);
+        MessagePackWriter writer = new MessagePackWriter();
 
         Map<Object, Object> nested = new HashMap<>();
         nested.put(0, 2);
@@ -62,7 +57,7 @@ public class MessagePackTest {
         writer.serialize(buffer, new BinaryDocument(root));
         ByteBuffer buf = buffer.getBuffer();
 
-        MessagePackReader reader = new MessagePackReader(readerContextPool, stackPool, false, false);
+        MessagePackReader reader = new MessagePackReader(false, false);
         BinaryDocument deserialized = new BinaryDocument(new HashMap<>());
         reader.deserialize(buf, deserialized);
 
@@ -74,7 +69,7 @@ public class MessagePackTest {
     @Test
     @SuppressWarnings("unchecked")
     public void serializeComplexObject() {
-        MessagePackWriter writer = new MessagePackWriter(writerContextPool, writerStackPool);
+        MessagePackWriter writer = new MessagePackWriter();
 
         Map<Object, Object> map = new HashMap<>();
         map.put(0, null);
@@ -92,7 +87,7 @@ public class MessagePackTest {
         writer.serialize(buffer, new BinaryDocument(map));
         ByteBuffer buf = buffer.getBuffer();
 
-        MessagePackReader reader = new MessagePackReader(readerContextPool, stackPool, false, false);
+        MessagePackReader reader = new MessagePackReader(false, false);
         BinaryDocument deserialized = new BinaryDocument(new HashMap<>());
         reader.deserialize(buf, deserialized);
 
@@ -117,7 +112,7 @@ public class MessagePackTest {
 
     @Test
     public void serializeDeeplyNestedMaps() {
-        MessagePackWriter writer = new MessagePackWriter(writerContextPool, writerStackPool);
+        MessagePackWriter writer = new MessagePackWriter();
 
         Map<Object, Object> level3 = new HashMap<>();
         level3.put(0, "deep");
@@ -135,7 +130,7 @@ public class MessagePackTest {
         writer.serialize(buffer, new BinaryDocument(root));
         ByteBuffer buf = buffer.getBuffer();
 
-        MessagePackReader reader = new MessagePackReader(readerContextPool, stackPool, false, false);
+        MessagePackReader reader = new MessagePackReader(false, false);
         BinaryDocument deserialized = new BinaryDocument(new HashMap<>());
         reader.deserialize(buf, deserialized);
 
@@ -143,21 +138,10 @@ public class MessagePackTest {
     }
 
     @Test
-    public void contextPoolReusesObjects() {
-        PoolFactory localFactory = PoolFactory.Builder.builder()
-                .setMinPoolSize(1)
-                .setMaxPoolSize(5)
-                .setOutOfPoolTimeout(1000)
-                .setBlocking(false)
-                .build();
+    public void frameStackReusedAcrossCycles() {
 
-        FastPool<ReaderContext> localReaderPool = localFactory.getPool(ReaderContext::new);
-        FastPool<ArrayDeque<ReaderContext>> localStackPool = localFactory.getPool(() -> new ArrayDeque<>(64));
-        FastPool<WriterContext> localWriterPool = localFactory.getPool(WriterContext::new);
-        FastPool<ArrayDeque<WriterContext>> localWriterStackPool = localFactory.getPool(() -> new ArrayDeque<>(16));
-
-        MessagePackWriter writer = new MessagePackWriter(localWriterPool, localWriterStackPool);
-        MessagePackReader reader = new MessagePackReader(localReaderPool, localStackPool, false, false);
+        MessagePackWriter writer = new MessagePackWriter();
+        MessagePackReader reader = new MessagePackReader(false, false);
 
         DynamicByteBuffer buffer = new DynamicByteBuffer(129 * 1024, true);
 
@@ -175,13 +159,13 @@ public class MessagePackTest {
             assertEquals(i, deserialized.get("0"));
         }
 
-        // Pool should have reused contexts - max pool size is 5, but we did 10 iterations
-        // This verifies no memory leak and proper pool recycling
+        // The per-thread frame arrays are reused across every cycle; this verifies the stack
+        // is left clean after each document (a stale frame would corrupt the next round-trip).
     }
 
     @Test
     public void serializeExtension() {
-        MessagePackWriter writer = new MessagePackWriter(writerContextPool, writerStackPool);
+        MessagePackWriter writer = new MessagePackWriter();
 
         Map<Object, Object> map = new HashMap<>();
         map.put(0, new MessagePackExtension((byte) 1, new byte[]{0x01, 0x02, 0x03, 0x04}));
@@ -190,7 +174,7 @@ public class MessagePackTest {
         writer.serialize(buffer, new BinaryDocument(map));
         ByteBuffer buf = buffer.getBuffer();
 
-        MessagePackReader reader = new MessagePackReader(readerContextPool, stackPool, false, false);
+        MessagePackReader reader = new MessagePackReader(false, false);
         BinaryDocument deserialized = new BinaryDocument(new HashMap<>());
         reader.deserialize(buf, deserialized);
 
@@ -201,7 +185,7 @@ public class MessagePackTest {
 
     @Test
     public void serializeTimestamp64WithNanos() {
-        MessagePackWriter writer = new MessagePackWriter(writerContextPool, writerStackPool);
+        MessagePackWriter writer = new MessagePackWriter();
         Instant now = Instant.now();
 
         Map<Object, Object> map = new HashMap<>();
@@ -211,7 +195,7 @@ public class MessagePackTest {
         writer.serialize(buffer, new BinaryDocument(map));
         ByteBuffer buf = buffer.getBuffer();
 
-        MessagePackReader reader = new MessagePackReader(readerContextPool, stackPool, false, false);
+        MessagePackReader reader = new MessagePackReader(false, false);
         BinaryDocument deserialized = new BinaryDocument(new HashMap<>());
         reader.deserialize(buf, deserialized);
 
@@ -220,7 +204,7 @@ public class MessagePackTest {
 
     @Test
     public void serializeTimestamp32NoNanos() {
-        MessagePackWriter writer = new MessagePackWriter(writerContextPool, writerStackPool);
+        MessagePackWriter writer = new MessagePackWriter();
         Instant ts = Instant.ofEpochSecond(1000000);
 
         Map<Object, Object> map = new HashMap<>();
@@ -230,7 +214,7 @@ public class MessagePackTest {
         writer.serialize(buffer, new BinaryDocument(map));
         ByteBuffer buf = buffer.getBuffer();
 
-        MessagePackReader reader = new MessagePackReader(readerContextPool, stackPool, false, false);
+        MessagePackReader reader = new MessagePackReader(false, false);
         BinaryDocument deserialized = new BinaryDocument(new HashMap<>());
         reader.deserialize(buf, deserialized);
 
@@ -239,7 +223,7 @@ public class MessagePackTest {
 
     @Test
     public void serializeTimestamp96NegativeSeconds() {
-        MessagePackWriter writer = new MessagePackWriter(writerContextPool, writerStackPool);
+        MessagePackWriter writer = new MessagePackWriter();
         Instant ts = Instant.ofEpochSecond(-1, 500000000);
 
         Map<Object, Object> map = new HashMap<>();
@@ -249,7 +233,7 @@ public class MessagePackTest {
         writer.serialize(buffer, new BinaryDocument(map));
         ByteBuffer buf = buffer.getBuffer();
 
-        MessagePackReader reader = new MessagePackReader(readerContextPool, stackPool, false, false);
+        MessagePackReader reader = new MessagePackReader(false, false);
         BinaryDocument deserialized = new BinaryDocument(new HashMap<>());
         reader.deserialize(buf, deserialized);
 
@@ -258,7 +242,7 @@ public class MessagePackTest {
 
     @Test
     public void serializeTimestamp32Epoch() {
-        MessagePackWriter writer = new MessagePackWriter(writerContextPool, writerStackPool);
+        MessagePackWriter writer = new MessagePackWriter();
         Instant ts = Instant.EPOCH;
 
         Map<Object, Object> map = new HashMap<>();
@@ -268,7 +252,7 @@ public class MessagePackTest {
         writer.serialize(buffer, new BinaryDocument(map));
         ByteBuffer buf = buffer.getBuffer();
 
-        MessagePackReader reader = new MessagePackReader(readerContextPool, stackPool, false, false);
+        MessagePackReader reader = new MessagePackReader(false, false);
         BinaryDocument deserialized = new BinaryDocument(new HashMap<>());
         reader.deserialize(buf, deserialized);
 
@@ -289,9 +273,7 @@ public class MessagePackTest {
                 .setBlocking(true)
                 .build();
 
-        FastPool<WriterContext> perfWriterPool = perfPoolFactory.getPool(WriterContext::new);
-        FastPool<ArrayDeque<WriterContext>> perfWriterStackPool = perfPoolFactory.getPool(() -> new ArrayDeque<>(16));
-        MessagePackWriter writer = new MessagePackWriter(perfWriterPool, perfWriterStackPool);
+        MessagePackWriter writer = new MessagePackWriter();
 
         byte[] payload = new byte[128 * 1024];
         for (int i = 0; i < payload.length; i++) payload[i] = (byte) (i % 128);
@@ -331,13 +313,9 @@ public class MessagePackTest {
                 .setBlocking(true)
                 .build();
 
-        FastPool<WriterContext> perfWriterPool = perfPoolFactory.getPool(WriterContext::new);
-        FastPool<ReaderContext> perfReaderPool = perfPoolFactory.getPool(ReaderContext::new);
-        FastPool<ArrayDeque<ReaderContext>> perfStackPool = perfPoolFactory.getPool(() -> new ArrayDeque<>(64));
 
-        FastPool<ArrayDeque<WriterContext>> perfWriterStackPool = perfPoolFactory.getPool(() -> new ArrayDeque<>(16));
-        MessagePackWriter writer = new MessagePackWriter(perfWriterPool, perfWriterStackPool);
-        MessagePackReader reader = new MessagePackReader(perfReaderPool, perfStackPool, false, false);
+        MessagePackWriter writer = new MessagePackWriter();
+        MessagePackReader reader = new MessagePackReader(false, false);
 
         byte[] payload = new byte[128 * 1024];
         for (int i = 0; i < payload.length; i++) payload[i] = (byte) (i % 128);
@@ -381,13 +359,9 @@ public class MessagePackTest {
                 .setBlocking(true)
                 .build();
 
-        FastPool<WriterContext> perfWriterPool = perfPoolFactory.getPool(WriterContext::new);
-        FastPool<ReaderContext> perfReaderPool = perfPoolFactory.getPool(ReaderContext::new);
-        FastPool<ArrayDeque<ReaderContext>> perfStackPool = perfPoolFactory.getPool(() -> new ArrayDeque<>(64));
 
-        FastPool<ArrayDeque<WriterContext>> perfWriterStackPool = perfPoolFactory.getPool(() -> new ArrayDeque<>(16));
-        MessagePackWriter writer = new MessagePackWriter(perfWriterPool, perfWriterStackPool);
-        MessagePackReader reader = new MessagePackReader(perfReaderPool, perfStackPool, false, false);
+        MessagePackWriter writer = new MessagePackWriter();
+        MessagePackReader reader = new MessagePackReader(false, false);
 
         byte[] payload = new byte[128 * 1024];
         for (int i = 0; i < payload.length; i++) payload[i] = (byte) (i % 128);
@@ -429,13 +403,9 @@ public class MessagePackTest {
                 .setBlocking(true)
                 .build();
 
-        FastPool<WriterContext> perfWriterPool = perfPoolFactory.getPool(WriterContext::new);
-        FastPool<ReaderContext> perfReaderPool = perfPoolFactory.getPool(ReaderContext::new);
-        FastPool<ArrayDeque<ReaderContext>> perfStackPool = perfPoolFactory.getPool(() -> new ArrayDeque<>(64));
 
-        FastPool<ArrayDeque<WriterContext>> perfWriterStackPool = perfPoolFactory.getPool(() -> new ArrayDeque<>(16));
-        MessagePackWriter writer = new MessagePackWriter(perfWriterPool, perfWriterStackPool);
-        MessagePackReader reader = new MessagePackReader(perfReaderPool, perfStackPool, false, false);
+        MessagePackWriter writer = new MessagePackWriter();
+        MessagePackReader reader = new MessagePackReader(false, false);
 
         // 1000 nested objects
         Map<Object, Object> fields = new HashMap<>();

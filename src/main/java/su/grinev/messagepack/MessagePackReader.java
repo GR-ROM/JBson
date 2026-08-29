@@ -5,26 +5,38 @@ import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import su.grinev.BinaryDocument;
 import su.grinev.Deserializer;
-import su.grinev.pool.FastPool;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.*;
 
+/**
+ * MessagePack decoder into a {@link BinaryDocument}: an iterative walk with an explicit stack of
+ * {@link ReaderContext} frames, one per open container.
+ *
+ * <p>The frames come from a per-thread array ({@link ReaderState}), not from a shared pool — see
+ * {@link MessagePackWriter} for why. The same state object also carries the string scratch buffer,
+ * the string cache and the nested-map pool, so one {@code ThreadLocal} lookup per
+ * {@link #deserialize} replaces the three (plus two per string) the reader used to make.
+ *
+ * <p>Maps come from a per-thread pool of {@link CompactMap}s that is reset at the start of every
+ * {@code deserialize} on that thread — including the root, for {@link #deserialize(ByteBuffer)}. A
+ * decoded document must therefore be consumed (bound) before the same thread decodes the next one.
+ * That is what keeps the hot path allocation-free: with a pooled root the only allocation left
+ * for a packet document is the {@code slice()} view over its binary payload.
+ */
 @Slf4j
 public class MessagePackReader implements Deserializer {
+    private static final int INITIAL_FRAMES = 16;
     private static final int STRING_BUFFER_SIZE = 256;
     private static final int DEFAULT_MAX_COLLECTION_SIZE = 65536;
     private static final int DEFAULT_MAP_POOL_SIZE = 16;
-    private final FastPool<ReaderContext> contextPool;
-    private final FastPool<ArrayDeque<ReaderContext>> stackPool;
+
     private final boolean useProjectionsForByteBuffer;
     private final boolean useByteBufferForBinary;
     private final int maxCollectionSize;
-    private final ThreadLocal<byte[]> stringBuffer = ThreadLocal.withInitial(() -> new byte[STRING_BUFFER_SIZE]);
-    private final ThreadLocal<MapPool> mapPoolThreadLocal = ThreadLocal.withInitial(() -> new MapPool(DEFAULT_MAP_POOL_SIZE));
-    private final ThreadLocal<StringCache> stringCacheThreadLocal = ThreadLocal.withInitial(StringCache::new);
+    private final ThreadLocal<ReaderState> state = ThreadLocal.withInitial(ReaderState::new);
     @Setter
     @Getter
     private boolean readLengthHeader;
@@ -32,29 +44,39 @@ public class MessagePackReader implements Deserializer {
     @Getter
     private boolean timestampAsEpochMillis;
 
-    public MessagePackReader(
-            FastPool<ReaderContext> contextPool,
-            FastPool<ArrayDeque<ReaderContext>> stackPool,
-            boolean useProjectionsForByteBuffer,
-            boolean useByteBufferForBinary) {
-        this(contextPool, stackPool, useProjectionsForByteBuffer, useByteBufferForBinary, DEFAULT_MAX_COLLECTION_SIZE);
+    public MessagePackReader(boolean useProjectionsForByteBuffer, boolean useByteBufferForBinary) {
+        this(useProjectionsForByteBuffer, useByteBufferForBinary, DEFAULT_MAX_COLLECTION_SIZE);
     }
 
-    public MessagePackReader(
-            FastPool<ReaderContext> contextPool,
-            FastPool<ArrayDeque<ReaderContext>> stackPool,
-            boolean useProjectionsForByteBuffer,
-            boolean useByteBufferForBinary,
-            int maxCollectionSize) {
-        this.contextPool = contextPool;
-        this.stackPool = stackPool;
+    public MessagePackReader(boolean useProjectionsForByteBuffer, boolean useByteBufferForBinary, int maxCollectionSize) {
         this.useProjectionsForByteBuffer = useProjectionsForByteBuffer;
         this.useByteBufferForBinary = useByteBufferForBinary;
         this.maxCollectionSize = maxCollectionSize;
         this.readLengthHeader = true;
     }
 
+    /** Decodes into the caller's document; its root map is filled in place. */
     public void deserialize(ByteBuffer buffer, BinaryDocument binaryDocument) {
+        ReaderState st = state.get();
+        st.mapPool.reset();
+        decode(buffer, binaryDocument.getDocumentMap(), st);
+    }
+
+    /**
+     * Decodes into this thread's reusable document, whose root is a pooled {@link CompactMap}: no
+     * allocation for the document at all. The returned document is overwritten by this thread's
+     * next {@code deserialize} call of either form — bind it or copy what you need before then.
+     */
+    @Override
+    public BinaryDocument deserialize(ByteBuffer buffer) {
+        ReaderState st = state.get();
+        st.mapPool.reset();
+        st.mapPool.get();   // claims (and clears) slot 0: the root behind st.rootDocument
+        decode(buffer, st.rootDocument.getDocumentMap(), st);
+        return st.rootDocument;
+    }
+
+    private void decode(ByteBuffer buffer, Map<Object, Object> root, ReaderState st) {
         // The length header counts bytes from the frame's start (see MessagePackWriter), and a frame
         // is read in-place from the buffer's CURRENT position — not absolute index 0 (callers no longer
         // slice() per frame, so several frames can share one buffer at non-zero offsets). Capture the
@@ -66,54 +88,58 @@ public class MessagePackReader implements Deserializer {
             length = buffer.getInt();
         }
 
-        Map<Object, Object> root = binaryDocument.getDocumentMap();
-        ArrayDeque<ReaderContext> stack = stackPool.get();
-        MapPool mapPool = mapPoolThreadLocal.get();
-        mapPool.reset();
-
         try {
             final int rootSize = getMapSize(buffer);
-            stack.addFirst(contextPool.get().initMap(root, rootSize));
+            st.push().initMap(root, rootSize);
 
-            while (!stack.isEmpty()) {
-                ReaderContext current = stack.getFirst();
-                int stackSize = stack.size();
+            while (st.depth > 0) {
+                ReaderContext current = st.frames[st.depth - 1];
+                int level = st.depth;
 
                 if (!current.isArray) {
                     Map<Object, Object> map = current.objectMap;
-                    while (current.index < current.size) {
-                        current.index++;
-                        Object key = readValue(buffer, null);
-                        Object value = readValue(buffer, stack);
-                        map.put(key, value);
+                    CompactMap compact = current.compact;
+                    while (current.remaining-- > 0) {
+                        if (readIntKey(buffer, st)) {
+                            // Tag keys are ints: put them unboxed into a CompactMap (the pooled nested
+                            // maps and the reusable root), boxed only into a caller-supplied HashMap.
+                            int key = st.intKey;
+                            Object value = readValue(buffer, st, false);
+                            if (compact != null) {
+                                compact.putInt(key, value);
+                            } else {
+                                map.put(key, value);
+                            }
+                        } else {
+                            Object key = readValue(buffer, st, true);
+                            Object value = readValue(buffer, st, false);
+                            map.put(key, value);
+                        }
 
-                        if (stack.size() > stackSize) {
+                        if (st.depth > level) {
                             break;
                         }
                     }
-                } else {List<Object> list = current.array;
-                    while (current.index < current.size) {
-                        current.index++;
-                        Object value = readValue(buffer, stack);
+                } else {
+                    List<Object> list = current.array;
+                    while (current.remaining-- > 0) {
+                        Object value = readValue(buffer, st, false);
                         list.add(value);
 
-                        if (stack.size() > stackSize) {
+                        if (st.depth > level) {
                             break;
                         }
                     }
                 }
 
-                if (stack.size() == stackSize) {
-                    stack.removeFirst();
-                    contextPool.release(current);
+                if (st.depth == level) {
+                    st.pop();
                 }
             }
         } finally {
-            for (ReaderContext ctx : stack) {
-                contextPool.release(ctx);
-            }
-            stack.clear();
-            stackPool.release(stack);
+            // Only non-empty after an exception mid-document: drop the containers so the frames do
+            // not pin them until this thread's next deserialize.
+            st.unwind();
         }
 
         if (length > -1 && length < buffer.position() - startPosition) {
@@ -121,7 +147,34 @@ public class MessagePackReader implements Deserializer {
         }
     }
 
-    private Object readValue(ByteBuffer buffer, ArrayDeque<ReaderContext> stack) {
+    /**
+     * Reads the next value as an {@code int} key when it is in one of the integer formats a tag is
+     * written in (fixint, uint8/16, int8/16/32); stores it in {@code st.intKey} and returns true.
+     * Anything else (a string key, uint32, a container) leaves the buffer untouched and returns
+     * false, and the general {@link #readValue} path takes over.
+     */
+    private static boolean readIntKey(ByteBuffer buffer, ReaderState st) {
+        int pos = buffer.position();
+        byte b = buffer.get();
+        if ((b & 0x80) == 0 || (b & 0xE0) == 0xE0) {
+            st.intKey = b;   // positive or negative fixint
+            return true;
+        }
+        switch (b & 0xFF) {
+            case 0xCC -> st.intKey = buffer.get() & 0xFF;          // UINT8
+            case 0xCD -> st.intKey = buffer.getShort() & 0xFFFF;   // UINT16
+            case 0xD0 -> st.intKey = buffer.get();                 // INT8
+            case 0xD1 -> st.intKey = buffer.getShort();            // INT16
+            case 0xD2 -> st.intKey = buffer.getInt();              // INT32
+            default -> {
+                buffer.position(pos);
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private Object readValue(ByteBuffer buffer, ReaderState st, boolean isKey) {
         byte b = buffer.get();
         if ((b & 0x80) == 0) {
             // Positive fixint: 0x00-0x7F (most common for small integers)
@@ -131,24 +184,13 @@ public class MessagePackReader implements Deserializer {
         int unsigned = b & 0xFF;
 
         if (unsigned >= 0xA0 && unsigned <= 0xBF) {
-            // Fixstr: 0xA0-0xBF - use thread-local buffer + string cache
-            int len = unsigned & 0x1F;
-            validateDataLength(len, buffer, "fixstr");
-            byte[] strBuf = stringBuffer.get();
-            if (strBuf.length < len) {
-                strBuf = new byte[STRING_BUFFER_SIZE * 2];
-                stringBuffer.set(strBuf);
-            }
-            buffer.get(strBuf, 0, len);
-            return stringCacheThreadLocal.get().intern(strBuf, 0, len);
+            // Fixstr: 0xA0-0xBF
+            return readString(buffer, unsigned & 0x1F, st);
         }
 
         if (unsigned <= 0x8F) {
             // Fixmap: 0x80-0x8F - push to stack
-            int size = unsigned & 0x0F;
-            Map<Object, Object> map = mapPoolThreadLocal.get().get();
-            stack.addFirst(contextPool.get().initMap(map, size));
-            return map;
+            return readMap(st, unsigned & 0x0F, isKey);
         }
 
         if (unsigned >= 0xE0) {
@@ -158,12 +200,7 @@ public class MessagePackReader implements Deserializer {
 
         if (unsigned <= 0x9F) {
             // Fixarray: 0x90-0x9F - push to stack
-            int size = unsigned & 0x0F;
-            List<Object> list = new ArrayList<>(size);
-            if (size > 0) {
-                stack.addFirst(contextPool.get().initArray(list, size));
-            }
-            return list;
+            return readArray(st, unsigned & 0x0F, isKey);
         }
 
         // Less common types
@@ -181,16 +218,16 @@ public class MessagePackReader implements Deserializer {
             case 0xD3 -> buffer.getLong(); // INT64
             case 0xCA -> buffer.getFloat();  // FLOAT32
             case 0xCB -> buffer.getDouble(); // FLOAT64
-            case 0xD9 -> readString(buffer, buffer.get() & 0xFF);    // STR8
-            case 0xDA -> readString(buffer, buffer.getShort() & 0xFFFF); // STR16
-            case 0xDB -> readString(buffer, buffer.getInt()); // STR32
+            case 0xD9 -> readString(buffer, buffer.get() & 0xFF, st);    // STR8
+            case 0xDA -> readString(buffer, buffer.getShort() & 0xFFFF, st); // STR16
+            case 0xDB -> readString(buffer, buffer.getInt(), st); // STR32
             case 0xC4 -> readBinary(buffer, buffer.get() & 0xFF);    // BIN8
             case 0xC5 -> readBinary(buffer, buffer.getShort() & 0xFFFF); // BIN16
             case 0xC6 -> readBinary(buffer, buffer.getInt()); // BIN32
-            case 0xDC -> readArray(stack, buffer.getShort() & 0xFFFF); // ARRAY16
-            case 0xDD -> readArray(stack, buffer.getInt()); // ARRAY32
-            case 0xDE -> readMap(stack, buffer.getShort() & 0xFFFF); // MAP16
-            case 0xDF -> readMap(stack, buffer.getInt()); // MAP32
+            case 0xDC -> readSizedArray(st, buffer.getShort() & 0xFFFF, isKey); // ARRAY16
+            case 0xDD -> readSizedArray(st, buffer.getInt(), isKey); // ARRAY32
+            case 0xDE -> readSizedMap(st, buffer.getShort() & 0xFFFF, isKey); // MAP16
+            case 0xDF -> readSizedMap(st, buffer.getInt(), isKey); // MAP32
             case 0xD4 -> readExtension(buffer, 1);
             case 0xD5 -> readExtension(buffer, 2);
             case 0xD6 -> readExtension(buffer, 4);
@@ -204,21 +241,33 @@ public class MessagePackReader implements Deserializer {
         };
     }
 
-    private Map<Object, Object> readMap(ArrayDeque<ReaderContext> stack, int size) {
-        Objects.requireNonNull(stack, "Map cannot be used as key");
+    private Map<Object, Object> readSizedMap(ReaderState st, int size, boolean isKey) {
         validateCollectionSize(size, "map");
+        return readMap(st, size, isKey);
+    }
 
-        Map<Object, Object> map = mapPoolThreadLocal.get().get();
-        stack.addFirst(contextPool.get().initMap(map, size));
+    private Map<Object, Object> readMap(ReaderState st, int size, boolean isKey) {
+        if (isKey) {
+            throw new MessagePackException("Map cannot be used as key");
+        }
+        Map<Object, Object> map = st.mapPool.get();
+        st.push().initMap(map, size);
         return map;
     }
 
-    private List<Object> readArray(ArrayDeque<ReaderContext> stack, int size) {
-        Objects.requireNonNull(stack, "List cannot be used as key");
+    private List<Object> readSizedArray(ReaderState st, int size, boolean isKey) {
         validateCollectionSize(size, "array");
+        return readArray(st, size, isKey);
+    }
 
+    private List<Object> readArray(ReaderState st, int size, boolean isKey) {
+        if (isKey) {
+            throw new MessagePackException("List cannot be used as key");
+        }
         List<Object> list = new ArrayList<>(size);
-        stack.addFirst(contextPool.get().initArray(list, size));
+        if (size > 0) {
+            st.push().initArray(list, size);
+        }
         return list;
     }
 
@@ -300,40 +349,15 @@ public class MessagePackReader implements Deserializer {
         };
     }
 
-    private String readString(ByteBuffer buffer, int len) {
+    private String readString(ByteBuffer buffer, int len, ReaderState st) {
         validateDataLength(len, buffer, "string");
-        byte[] strBuf = stringBuffer.get();
+        byte[] strBuf = st.strBuf;
         if (strBuf.length < len) {
-            strBuf = new byte[len];
-            stringBuffer.set(strBuf);
+            strBuf = new byte[Math.max(len, strBuf.length * 2)];
+            st.strBuf = strBuf;
         }
         buffer.get(strBuf, 0, len);
-        return stringCacheThreadLocal.get().intern(strBuf, 0, len);
-    }
-
-    static final class MapPool {
-        private final CompactMap[] maps;
-        private int index;
-
-        MapPool(int size) {
-            this.maps = new CompactMap[size];
-            for (int i = 0; i < size; i++) {
-                maps[i] = new CompactMap();
-            }
-        }
-
-        Map<Object, Object> get() {
-            if (index < maps.length) {
-                CompactMap map = maps[index++];
-                map.clear();
-                return map;
-            }
-            return new CompactMap();
-        }
-
-        void reset() {
-            index = 0;
-        }
+        return st.strings.intern(strBuf, 0, len);
     }
 
     private int getMapSize(ByteBuffer buffer) {
@@ -352,6 +376,75 @@ public class MessagePackReader implements Deserializer {
         }
         validateCollectionSize(size, "root map");
         return size;
+    }
+
+    /**
+     * Everything one thread needs while decoding — the frame stack, string scratch, string cache,
+     * map pool and the reusable root document — behind a single {@code ThreadLocal} lookup per
+     * {@link #deserialize}.
+     */
+    static final class ReaderState {
+        ReaderContext[] frames = new ReaderContext[INITIAL_FRAMES];
+        int depth;
+        int intKey;                       // out-parameter of readIntKey
+        byte[] strBuf = new byte[STRING_BUFFER_SIZE];
+        final MapPool mapPool = new MapPool(DEFAULT_MAP_POOL_SIZE);
+        final StringCache strings = new StringCache();
+        /** Wraps the pool's slot 0, which reset()+get() hands out first — so the root is always this map. */
+        final BinaryDocument rootDocument = new BinaryDocument(mapPool.root());
+
+        /** Opens a new frame on top of the stack; the caller initialises it. */
+        ReaderContext push() {
+            if (depth == frames.length) {
+                frames = Arrays.copyOf(frames, depth * 2);
+            }
+            ReaderContext frame = frames[depth];
+            if (frame == null) {
+                frames[depth] = frame = new ReaderContext();
+            }
+            depth++;
+            return frame;
+        }
+
+        void pop() {
+            frames[--depth].clear();
+        }
+
+        void unwind() {
+            while (depth > 0) {
+                pop();
+            }
+        }
+    }
+
+    static final class MapPool {
+        private final CompactMap[] maps;
+        private int index;
+
+        MapPool(int size) {
+            this.maps = new CompactMap[size];
+            for (int i = 0; i < size; i++) {
+                maps[i] = new CompactMap();
+            }
+        }
+
+        /** Slot 0 — the first map {@link #get()} returns after a {@link #reset()}. */
+        CompactMap root() {
+            return maps[0];
+        }
+
+        Map<Object, Object> get() {
+            if (index < maps.length) {
+                CompactMap map = maps[index++];
+                map.clear();
+                return map;
+            }
+            return new CompactMap();
+        }
+
+        void reset() {
+            index = 0;
+        }
     }
 
     /**

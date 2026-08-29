@@ -3,14 +3,10 @@ package su.grinev;
 import org.junit.jupiter.api.Test;
 import su.grinev.messagepack.MessagePackReader;
 import su.grinev.messagepack.MessagePackWriter;
-import su.grinev.messagepack.ReaderContext;
-import su.grinev.messagepack.WriterContext;
 import su.grinev.pool.DynamicByteBuffer;
-import su.grinev.pool.FastPool;
 import su.grinev.pool.PoolFactory;
 
 import java.nio.ByteBuffer;
-import java.util.ArrayDeque;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -36,18 +32,14 @@ public class MessagePackBufferGrowthTest {
             .setBlocking(false)
             .build();
 
-    private final FastPool<ReaderContext> readerContextPool = poolFactory.getPool(ReaderContext::new);
-    private final FastPool<ArrayDeque<ReaderContext>> readerStackPool = poolFactory.getPool(() -> new ArrayDeque<>(64));
-    private final FastPool<WriterContext> writerContextPool = poolFactory.getPool(WriterContext::new);
-    private final FastPool<ArrayDeque<WriterContext>> writerStackPool = poolFactory.getPool(() -> new ArrayDeque<>(16));
 
     private BinaryDocument roundTrip(Map<Object, Object> map, int initialCapacity) {
-        MessagePackWriter writer = new MessagePackWriter(writerContextPool, writerStackPool);
+        MessagePackWriter writer = new MessagePackWriter();
         DynamicByteBuffer buffer = new DynamicByteBuffer(initialCapacity, true);
         writer.serialize(buffer, new BinaryDocument(map));
 
         ByteBuffer wire = buffer.getBuffer();
-        MessagePackReader reader = new MessagePackReader(readerContextPool, readerStackPool, false, false);
+        MessagePackReader reader = new MessagePackReader(false, false);
         BinaryDocument out = new BinaryDocument(new HashMap<>());
         reader.deserialize(wire, out);
         return out;

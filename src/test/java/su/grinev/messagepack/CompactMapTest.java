@@ -169,11 +169,49 @@ class CompactMapTest {
     }
 
     @Test
-    void unsupportedKeyThrows() {
-        assertThrows(UnsupportedOperationException.class, () -> map.put("string", "value"));
-        assertThrows(UnsupportedOperationException.class, () -> map.put(16, "value"));
-        assertThrows(UnsupportedOperationException.class, () -> map.put(-1, "value"));
-        assertThrows(UnsupportedOperationException.class, () -> map.put(999, "value"));
+    void overflowKeysAreAccepted() {
+        map.put(0, "fast");
+        map.put("string", "s");
+        map.put(16, "sixteen");
+        map.put(-1, "minus");
+        map.put(999, "big");
+        assertEquals(5, map.size());
+        assertEquals("s", map.get("string"));
+        assertEquals("sixteen", map.get(16));
+        assertEquals("minus", map.get(-1));
+        assertEquals("big", map.get(999));
+        assertTrue(map.containsKey(999));
+        assertFalse(map.containsKey(998));
+        assertTrue(map.containsValue("big"));
+
+        assertEquals("big", map.put(999, "bigger"));
+        assertEquals(5, map.size());
+        assertEquals("bigger", map.remove(999));
+        assertNull(map.remove(999));
+        assertEquals(4, map.size());
+
+        assertEquals(4, map.keySet().size());
+        assertEquals(4, map.values().size());
+        assertEquals(4, map.entrySet().size());
+        int seen = 0;
+        for (var it = map.entryIterator(); it.hasNext(); ) {
+            var e = it.next();
+            assertEquals(map.get(e.getKey()), e.getValue());
+            seen++;
+        }
+        assertEquals(4, seen);
+        assertTrue(map.toString().contains("string=s"));
+
+        map.clear();
+        assertTrue(map.isEmpty());
+        assertNull(map.get("string"));
+        map.put(16, "again");
+        assertEquals("again", map.get(16));
+    }
+
+    @Test
+    void nullKeyThrows() {
+        assertThrows(UnsupportedOperationException.class, () -> map.put(null, "value"));
     }
 
     @Test

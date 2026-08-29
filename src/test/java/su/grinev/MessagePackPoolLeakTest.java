@@ -3,42 +3,29 @@ package su.grinev;
 import org.junit.jupiter.api.Test;
 import su.grinev.messagepack.MessagePackException;
 import su.grinev.messagepack.MessagePackReader;
-import su.grinev.messagepack.ReaderContext;
-import su.grinev.pool.FastPool;
-import su.grinev.pool.PoolFactory;
 
 import java.nio.ByteBuffer;
-import java.util.ArrayDeque;
 import java.util.HashMap;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Verifies that ReaderContext objects are properly released back to the pool
- * when deserialization fails mid-parse due to malformed input.
+ * Verifies that the reader stays usable after deserialization fails mid-parse on malformed
+ * input: the per-thread frame stack must be unwound in finally, so frames left over from a
+ * failed document never leak into the next one.
  *
- * Previously (J6 bug), the finally block did stack.clear() without releasing
- * each ReaderContext, causing permanent pool exhaustion after repeated failures.
+ * Historically (J6 bug) the frames came from a pool and the finally block did stack.clear()
+ * without releasing them, exhausting the pool after repeated failures.
  */
 public class MessagePackPoolLeakTest {
 
     /**
-     * Repeated malformed packets with nested structures must NOT exhaust the pool.
-     * Pool limit=5, 50 failures — pool should survive all of them.
+     * Repeated malformed packets with nested structures: 50 failures in a row, the reader
+     * must still decode a valid document afterwards.
      */
     @Test
     void repeatedMalformedPackets_poolRemainsHealthy() {
-        PoolFactory poolFactory = PoolFactory.Builder.builder()
-                .setMinPoolSize(1)
-                .setMaxPoolSize(5)
-                .setOutOfPoolTimeout(1000)
-                .setBlocking(false)
-                .build();
-
-        FastPool<ReaderContext> contextPool = poolFactory.getPool(ReaderContext::new);
-        FastPool<ArrayDeque<ReaderContext>> stackPool = poolFactory.getPool(() -> new ArrayDeque<>(64));
-
-        MessagePackReader reader = new MessagePackReader(contextPool, stackPool, false, false);
+        MessagePackReader reader = new MessagePackReader(false, false);
         reader.setReadLengthHeader(false);
 
         byte[] malformed = craftNestedMapThenTruncate();
@@ -51,7 +38,6 @@ public class MessagePackPoolLeakTest {
             } catch (MessagePackException | java.nio.BufferUnderflowException e) {
                 // Expected
             }
-            // No IllegalStateException("Pool overflow") should occur
         }
 
         // Valid payload must still work after 50 failures
@@ -62,22 +48,12 @@ public class MessagePackPoolLeakTest {
     }
 
     /**
-     * Deeply nested malformed packets (3 levels = 3 contexts per failure)
-     * must also not exhaust the pool.
+     * Deeply nested malformed packets (3 levels = 3 frames left open per failure)
+     * must also leave the reader healthy.
      */
     @Test
     void deeplyNestedMalformed_poolRemainsHealthy() {
-        PoolFactory poolFactory = PoolFactory.Builder.builder()
-                .setMinPoolSize(1)
-                .setMaxPoolSize(5)
-                .setOutOfPoolTimeout(1000)
-                .setBlocking(false)
-                .build();
-
-        FastPool<ReaderContext> contextPool = poolFactory.getPool(ReaderContext::new);
-        FastPool<ArrayDeque<ReaderContext>> stackPool = poolFactory.getPool(() -> new ArrayDeque<>(64));
-
-        MessagePackReader reader = new MessagePackReader(contextPool, stackPool, false, false);
+        MessagePackReader reader = new MessagePackReader(false, false);
         reader.setReadLengthHeader(false);
 
         byte[] deepMalformed = craftDeeplyNestedThenTruncate();
@@ -98,21 +74,11 @@ public class MessagePackPoolLeakTest {
     }
 
     /**
-     * Mix of valid and malformed packets — pool must stay healthy throughout.
+     * Mix of valid and malformed packets — the reader must stay healthy throughout.
      */
     @Test
     void mixedValidAndMalformed_poolRemainsHealthy() {
-        PoolFactory poolFactory = PoolFactory.Builder.builder()
-                .setMinPoolSize(1)
-                .setMaxPoolSize(5)
-                .setOutOfPoolTimeout(1000)
-                .setBlocking(false)
-                .build();
-
-        FastPool<ReaderContext> contextPool = poolFactory.getPool(ReaderContext::new);
-        FastPool<ArrayDeque<ReaderContext>> stackPool = poolFactory.getPool(() -> new ArrayDeque<>(64));
-
-        MessagePackReader reader = new MessagePackReader(contextPool, stackPool, false, false);
+        MessagePackReader reader = new MessagePackReader(false, false);
         reader.setReadLengthHeader(false);
 
         for (int i = 0; i < 100; i++) {

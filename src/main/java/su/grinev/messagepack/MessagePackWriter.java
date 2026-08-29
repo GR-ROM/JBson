@@ -5,7 +5,6 @@ import lombok.Setter;
 import su.grinev.BinaryDocument;
 import su.grinev.Serializer;
 import su.grinev.pool.DynamicByteBuffer;
-import su.grinev.pool.FastPool;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -16,22 +15,30 @@ import java.time.ZoneOffset;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * MessagePack encoder for a {@link BinaryDocument}: an iterative walk with an explicit stack of
+ * {@link WriterContext} frames, one per open container.
+ *
+ * <p>The frames come from a per-thread array ({@link WriterState}), not from a shared pool. A frame is
+ * three fields that live for the duration of one container; handing them out through a
+ * cross-thread pool cost a lock plus several CAS per get/release — six round-trips for a
+ * two-level packet, which on the VPN hot path was most of the encode time. The array is grown
+ * on demand and never shrinks; a document nested deeper than any seen before on that thread costs
+ * one array copy, then nothing.
+ */
 public class MessagePackWriter implements Serializer {
-    private final FastPool<WriterContext> contextPool;
-    private final FastPool<ArrayDeque<WriterContext>> stackPool;
+    private static final int INITIAL_FRAMES = 16;
+
     private final Map<String, byte[]> keyCache = new ConcurrentHashMap<>();
-    private final ThreadLocal<StringBytesCache> stringBytesCache = ThreadLocal.withInitial(StringBytesCache::new);
+    private final ThreadLocal<WriterState> state = ThreadLocal.withInitial(WriterState::new);
     @Setter
     @Getter
     private boolean writeLengthHeader;
 
-    public MessagePackWriter(FastPool<WriterContext> contextPool, FastPool<ArrayDeque<WriterContext>> stackPool) {
-        this.contextPool = contextPool;
-        this.stackPool = stackPool;
+    public MessagePackWriter() {
         writeLengthHeader = true;
     }
 
-    @SuppressWarnings("unchecked")
     public void serialize(DynamicByteBuffer buffer, BinaryDocument document) {
         buffer.getBuffer().clear().order(ByteOrder.BIG_ENDIAN);
         if (writeLengthHeader) {
@@ -39,39 +46,38 @@ public class MessagePackWriter implements Serializer {
             buffer.putInt(0);
         }
         Map<Object, Object> documentMap = document.getDocumentMap();
-        ArrayDeque<WriterContext> stack = stackPool.get();
+        WriterState st = state.get();
 
         try {
-            stack.push(contextPool.get().initMap(mapIterator(documentMap)));
+            st.push().initMap(mapIterator(documentMap));
 
             writeMapHeader(buffer, documentMap.size());
 
-            while (!stack.isEmpty()) {
-                WriterContext context = stack.getFirst();
-                int stackSize = stack.size();
+            while (st.depth > 0) {
+                WriterContext context = st.frames[st.depth - 1];
+                int level = st.depth;
 
                 if (!context.isArray) {
-                    while (context.objectMap.hasNext() && stack.size() == stackSize) {
+                    while (context.objectMap.hasNext() && st.depth == level) {
                         Map.Entry<Object, Object> objectEntry = context.objectMap.next();
                         Object keyObj = objectEntry.getKey();
                         if (keyObj instanceof String s) {
                             byte[] keyBytes = keyCache.computeIfAbsent(s, k -> k.getBytes(StandardCharsets.UTF_8));
                             doWriteString(buffer, keyBytes);
                         } else {
-                            writeValue(stack, buffer, keyObj);
+                            writeValue(st, buffer, keyObj);
                         }
-                        writeValue(stack, buffer, objectEntry.getValue());
+                        writeValue(st, buffer, objectEntry.getValue());
                     }
                 } else {
-                    while (context.array.hasNext() && stack.size() == stackSize) {
+                    while (context.array.hasNext() && st.depth == level) {
                         Object value = context.array.next();
-                        writeValue(stack, buffer, value);
+                        writeValue(st, buffer, value);
                     }
                 }
 
-                if (stack.size() == stackSize) {
-                    WriterContext ctx = stack.removeFirst();
-                    contextPool.release(ctx);
+                if (st.depth == level) {
+                    st.pop();
                 }
             }
 
@@ -82,7 +88,9 @@ public class MessagePackWriter implements Serializer {
             }
             buffer.flip();
         } finally {
-            stackPool.release(stack);
+            // Only non-empty after an exception mid-document: drop the iterators so the frames do not
+            // pin the caller's maps until this thread's next serialize.
+            st.unwind();
         }
     }
 
@@ -113,7 +121,7 @@ public class MessagePackWriter implements Serializer {
     }
 
     @SuppressWarnings("unchecked")
-    private void writeValue(ArrayDeque<WriterContext> stack, DynamicByteBuffer buffer, Object value) {
+    private void writeValue(WriterState st, DynamicByteBuffer buffer, Object value) {
         switch (value) {
             case null -> {
                 buffer.ensureCapacity(1);
@@ -133,18 +141,16 @@ public class MessagePackWriter implements Serializer {
                 buffer.ensureCapacity(9);
                 buffer.put((byte) 0xCB).putDouble(d);
             }
-            case String s -> writeString(buffer, s);
+            case String s -> doWriteString(buffer, st.strings.utf8(s));
             case byte[] bytes -> writeBinary(buffer, bytes);
             case ByteBuffer bb -> writeBinary(buffer, bb);
             case List list -> {
                 writeArrayHeader(buffer, list.size());
-                WriterContext writerContext = contextPool.get().initList(list.iterator());
-                stack.push(writerContext);
+                st.push().initList(list.iterator());
             }
             case Map map -> {
                 writeMapHeader(buffer, map.size());
-                WriterContext writerContext = contextPool.get().initMap(mapIterator(map));
-                stack.push(writerContext);
+                st.push().initMap(mapIterator(map));
             }
             case MessagePackExtension ext -> writeExtension(buffer, ext);
             case Instant inst -> writeTimestamp(buffer, inst);
@@ -187,10 +193,6 @@ public class MessagePackWriter implements Serializer {
         } else {
             buffer.put((byte) 0xD3).putLong(value);
         }
-    }
-
-    private void writeString(DynamicByteBuffer buffer, String value) {
-        doWriteString(buffer, stringBytesCache.get().utf8(value));
     }
 
     private void doWriteString(DynamicByteBuffer buffer, byte[] stringBytes) {
@@ -281,6 +283,39 @@ public class MessagePackWriter implements Serializer {
             return cm.entryIterator();
         }
         return ((Map<Object, Object>) map).entrySet().iterator();
+    }
+
+    /**
+     * Everything one thread needs while encoding — the frame stack and the string cache — behind a
+     * single {@code ThreadLocal} lookup per {@link #serialize}.
+     */
+    static final class WriterState {
+        WriterContext[] frames = new WriterContext[INITIAL_FRAMES];
+        int depth;
+        final StringBytesCache strings = new StringBytesCache();
+
+        /** Opens a new frame on top of the stack; the caller initialises it. */
+        WriterContext push() {
+            if (depth == frames.length) {
+                frames = Arrays.copyOf(frames, depth * 2);
+            }
+            WriterContext frame = frames[depth];
+            if (frame == null) {
+                frames[depth] = frame = new WriterContext();
+            }
+            depth++;
+            return frame;
+        }
+
+        void pop() {
+            frames[--depth].clear();
+        }
+
+        void unwind() {
+            while (depth > 0) {
+                pop();
+            }
+        }
     }
 
     /**

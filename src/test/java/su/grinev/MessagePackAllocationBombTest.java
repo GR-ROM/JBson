@@ -3,13 +3,10 @@ package su.grinev;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import su.grinev.messagepack.MessagePackException;
-import su.grinev.messagepack.ReaderContext;
 import su.grinev.messagepack.MessagePackReader;
-import su.grinev.pool.FastPool;
 import su.grinev.pool.PoolFactory;
 
 import java.nio.ByteBuffer;
-import java.util.ArrayDeque;
 import java.util.HashMap;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -31,9 +28,7 @@ public class MessagePackAllocationBombTest {
                 .setOutOfPoolTimeout(1000)
                 .setBlocking(false)
                 .build();
-        FastPool<ReaderContext> readerContextPool = poolFactory.getPool(ReaderContext::new);
-        FastPool<ArrayDeque<ReaderContext>> stackPool = poolFactory.getPool(() -> new ArrayDeque<>(64));
-        reader = new MessagePackReader(readerContextPool, stackPool, false, false);
+        reader = new MessagePackReader(false, false);
         reader.setReadLengthHeader(false);
     }
 
@@ -234,12 +229,9 @@ public class MessagePackAllocationBombTest {
                 .setOutOfPoolTimeout(1000)
                 .setBlocking(false)
                 .build();
-        FastPool<ReaderContext> readerContextPool = poolFactory.getPool(ReaderContext::new);
-        FastPool<ArrayDeque<ReaderContext>> stackPool = poolFactory.getPool(() -> new ArrayDeque<>(64));
 
         // maxCollectionSize = 16
-        MessagePackReader strictReader = new MessagePackReader(
-                readerContextPool, stackPool, false, false, 16);
+        MessagePackReader strictReader = new MessagePackReader(false, false, 16);
         strictReader.setReadLengthHeader(false);
 
         // Array of 100 elements — exceeds limit of 16

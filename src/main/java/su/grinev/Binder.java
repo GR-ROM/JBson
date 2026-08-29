@@ -7,6 +7,7 @@ import annotation.Size;
 import annotation.Range;
 import annotation.Pattern;
 import su.grinev.exception.ValidationException;
+import su.grinev.messagepack.CompactMap;
 
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
@@ -166,55 +167,71 @@ public class Binder {
             Map<Integer, Object> documentMap = (Map<Integer, Object>) ctx.document;
             FieldBinding[] tagLookup = schema.tagLookup;
 
-            for (Map.Entry<Integer, Object> entry : documentMap.entrySet()) {
-                int key = entry.getKey();
-                if (key < 0 || key >= tagLookup.length) continue;
-                FieldBinding binding = tagLookup[key];
-                if (binding == null) continue;
-
-                Object value = entry.getValue();
-                enforceConstraints(binding.constraints, value, binding.tag);
-
-                try {
-                    switch (binding.kind) {
-                        case PRIMITIVE -> binding.handle.set(ctx.o, coerceNumeric(binding.fieldType, value));
-                        case ENUM -> binding.handle.set(ctx.o, resolveEnum(binding.fieldType, value.toString()));
-                        case COLLECTION -> {
-                            Collection<Object> target = instantiateCollection(binding.fieldType);
-                            binding.handle.set(ctx.o, target);
-                            stack.addLast(new BinderContext(target, value, binding.genericType));
-                        }
-                        case MAP -> {
-                            Map<Object, Object> targetMap = new HashMap<>();
-                            binding.handle.set(ctx.o, targetMap);
-                            stack.addLast(new BinderContext(targetMap, value, binding.genericType));
-                        }
-                        case TYPE -> {
-                            String className = (String) documentMap.get(binding.discriminator);
-                            Class<?> targetCls = resolveClass(className);
-                            if (targetCls.isRecord()) {
-                                binding.handle.set(ctx.o, bindRecord(targetCls, (Map<Integer, Object>) value));
-                            } else {
-                                Object newObject = instantiate(targetCls);
-                                binding.handle.set(ctx.o, newObject);
-                                stack.addLast(new BinderContext(newObject, value, targetCls));
-                            }
-                        }
-                        case NESTED -> {
-                            Class<?> targetCls = binding.fieldType;
-                            if (targetCls.isRecord()) {
-                                binding.handle.set(ctx.o, bindRecord(targetCls, (Map<Integer, Object>) value));
-                            } else {
-                                Object newObject = instantiate(targetCls);
-                                binding.handle.set(ctx.o, newObject);
-                                stack.addLast(new BinderContext(newObject, value, targetCls));
-                            }
-                        }
+            if (ctx.document instanceof CompactMap cm) {
+                // The reader's documents: walk the reusable iterator instead of materialising an
+                // entry set per bound object. Keys are ints (tags); anything else is not a field.
+                Iterator<Map.Entry<Object, Object>> it = cm.entryIterator();
+                while (it.hasNext()) {
+                    Map.Entry<Object, Object> entry = it.next();
+                    if (entry.getKey() instanceof Integer key) {
+                        bindField(ctx, tagLookup, documentMap, key, entry.getValue(), stack);
                     }
-                } catch (Exception e) {
-                    throw new RuntimeException("Failed to bind tag: " + key, e);
+                }
+            } else {
+                for (Map.Entry<Integer, Object> entry : documentMap.entrySet()) {
+                    bindField(ctx, tagLookup, documentMap, entry.getKey(), entry.getValue(), stack);
                 }
             }
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private void bindField(BinderContext ctx, FieldBinding[] tagLookup, Map<Integer, Object> documentMap,
+                   int key, Object value, ArrayDeque<BinderContext> stack) {
+        if (key < 0 || key >= tagLookup.length) return;
+        FieldBinding binding = tagLookup[key];
+        if (binding == null) return;
+
+        enforceConstraints(binding.constraints, value, binding.tag);
+
+        try {
+            switch (binding.kind) {
+                case PRIMITIVE -> binding.handle.set(ctx.o, coerceNumeric(binding.fieldType, value));
+                case ENUM -> binding.handle.set(ctx.o, resolveEnum(binding.fieldType, value.toString()));
+                case COLLECTION -> {
+                    Collection<Object> target = instantiateCollection(binding.fieldType);
+                    binding.handle.set(ctx.o, target);
+                    stack.addLast(new BinderContext(target, value, binding.genericType));
+                }
+                case MAP -> {
+                    Map<Object, Object> targetMap = new HashMap<>();
+                    binding.handle.set(ctx.o, targetMap);
+                    stack.addLast(new BinderContext(targetMap, value, binding.genericType));
+                }
+                case TYPE -> {
+                    String className = (String) documentMap.get(binding.discriminator);
+                    Class<?> targetCls = resolveClass(className);
+                    if (targetCls.isRecord()) {
+                        binding.handle.set(ctx.o, bindRecord(targetCls, (Map<Integer, Object>) value));
+                    } else {
+                        Object newObject = instantiate(targetCls);
+                        binding.handle.set(ctx.o, newObject);
+                        stack.addLast(new BinderContext(newObject, value, targetCls));
+                    }
+                }
+                case NESTED -> {
+                    Class<?> targetCls = binding.fieldType;
+                    if (targetCls.isRecord()) {
+                        binding.handle.set(ctx.o, bindRecord(targetCls, (Map<Integer, Object>) value));
+                    } else {
+                        Object newObject = instantiate(targetCls);
+                        binding.handle.set(ctx.o, newObject);
+                        stack.addLast(new BinderContext(newObject, value, targetCls));
+                    }
+                }
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to bind tag: " + key, e);
         }
     }
 
@@ -228,11 +245,11 @@ public class Binder {
             return null;
         }
         return new Constraints(
-                sizeAnn != null ? sizeAnn.min() : 0,
-                sizeAnn != null ? sizeAnn.max() : Integer.MAX_VALUE,
-                rangeAnn != null ? rangeAnn.min() : Long.MIN_VALUE,
-                rangeAnn != null ? rangeAnn.max() : Long.MAX_VALUE,
-                patternAnn != null ? java.util.regex.Pattern.compile(patternAnn.value()) : null);
+        sizeAnn != null ? sizeAnn.min() : 0,
+        sizeAnn != null ? sizeAnn.max() : Integer.MAX_VALUE,
+        rangeAnn != null ? rangeAnn.min() : Long.MIN_VALUE,
+        rangeAnn != null ? rangeAnn.max() : Long.MAX_VALUE,
+        patternAnn != null ? java.util.regex.Pattern.compile(patternAnn.value()) : null);
     }
 
     // Fail-fast field validation during binding: @Size (String length / Collection size / byte[]
@@ -245,30 +262,30 @@ public class Binder {
         if (value instanceof CharSequence cs) {
             int len = cs.length();
             if (len < c.minSize || len > c.maxSize) {
-                throw new ValidationException("Field (tag " + tag + ") length " + len
-                        + " is out of bounds [" + c.minSize + ", " + c.maxSize + "]");
+        throw new ValidationException("Field (tag " + tag + ") length " + len
+                + " is out of bounds [" + c.minSize + ", " + c.maxSize + "]");
             }
             if (c.pattern != null && !c.pattern.matcher(cs).matches()) {
-                throw new ValidationException("Field (tag " + tag + ") does not match pattern "
-                        + c.pattern.pattern());
+        throw new ValidationException("Field (tag " + tag + ") does not match pattern "
+                + c.pattern.pattern());
             }
         } else if (value instanceof Collection<?> col) {
             int sz = col.size();
             if (sz < c.minSize || sz > c.maxSize) {
-                throw new ValidationException("Field (tag " + tag + ") size " + sz
-                        + " is out of bounds [" + c.minSize + ", " + c.maxSize + "]");
+        throw new ValidationException("Field (tag " + tag + ") size " + sz
+                + " is out of bounds [" + c.minSize + ", " + c.maxSize + "]");
             }
         } else if (value instanceof byte[] b) {
             int len = b.length;
             if (len < c.minSize || len > c.maxSize) {
-                throw new ValidationException("Field (tag " + tag + ") length " + len
-                        + " is out of bounds [" + c.minSize + ", " + c.maxSize + "]");
+        throw new ValidationException("Field (tag " + tag + ") length " + len
+                + " is out of bounds [" + c.minSize + ", " + c.maxSize + "]");
             }
         } else if (value instanceof Number n && !(value instanceof Float || value instanceof Double)) {
             long v = n.longValue();
             if (v < c.rangeMin || v > c.rangeMax) {
-                throw new ValidationException("Field (tag " + tag + ") value " + v
-                        + " is out of range [" + c.rangeMin + ", " + c.rangeMax + "]");
+        throw new ValidationException("Field (tag " + tag + ") value " + v
+                + " is out of range [" + c.rangeMin + ", " + c.rangeMax + "]");
             }
         }
     }
@@ -306,10 +323,10 @@ public class Binder {
             java.lang.reflect.RecordComponent rc = comps[i];
             Constraints c = buildConstraints(rc);
             if (c == null) {
-                try {
-                    c = buildConstraints(recordClass.getDeclaredField(rc.getName()));
-                } catch (NoSuchFieldException ignored) {
-                }
+        try {
+            c = buildConstraints(recordClass.getDeclaredField(rc.getName()));
+        } catch (NoSuchFieldException ignored) {
+        }
             }
             out[i] = c;
         }
@@ -334,17 +351,17 @@ public class Binder {
         Tag tag = rc.getAnnotation(Tag.class);
         if (tag == null) {
             try {
-                tag = recordClass.getDeclaredField(rc.getName()).getAnnotation(Tag.class);
+        tag = recordClass.getDeclaredField(rc.getName()).getAnnotation(Tag.class);
             } catch (NoSuchFieldException ignored) {
             }
         }
         if (tag == null) {
             throw new IllegalArgumentException("Record component '" + rc.getName() + "' in '"
-                    + recordClass.getName() + "' must be annotated with @Tag");
+            + recordClass.getName() + "' must be annotated with @Tag");
         }
         if (tag.value() < 0) {
             throw new IllegalArgumentException("Tag value for record component '" + rc.getName() + "' in '"
-                    + recordClass.getName() + "' must be non-negative, got " + tag.value());
+            + recordClass.getName() + "' must be non-negative, got " + tag.value());
         }
         return tag.value();
     }
@@ -358,9 +375,9 @@ public class Binder {
             return Enum.valueOf((Class<Enum>) enumType, name);
         } catch (IllegalArgumentException e) {
             for (Object c : enumType.getEnumConstants()) {
-                if (((Enum<?>) c).name().equals("UNKNOWN")) {
-                    return (Enum<?>) c;
-                }
+        if (((Enum<?>) c).name().equals("UNKNOWN")) {
+            return (Enum<?>) c;
+        }
             }
             throw e;
         }
@@ -385,17 +402,17 @@ public class Binder {
             java.lang.reflect.Type itemType = resolveListItemType(genericType);
             Class<?> itemClass = resolveClassFromType(itemType);
             for (Object raw : (List<?>) docVal) {
-                if (raw == null) {
-                    col.add(null);
-                } else if (isPrimitiveOrWrapperOrString(itemClass)) {
-                    col.add(coerceNumeric(itemClass, raw));
-                } else if (raw instanceof Map<?, ?> m) {
-                    col.add(itemClass.isRecord()
-                            ? bindRecord(itemClass, (Map<Integer, Object>) m)
-                            : bindClassValue(itemClass, (Map<Integer, Object>) m));
-                } else {
-                    col.add(raw);
-                }
+        if (raw == null) {
+            col.add(null);
+        } else if (isPrimitiveOrWrapperOrString(itemClass)) {
+            col.add(coerceNumeric(itemClass, raw));
+        } else if (raw instanceof Map<?, ?> m) {
+            col.add(itemClass.isRecord()
+                    ? bindRecord(itemClass, (Map<Integer, Object>) m)
+                    : bindClassValue(itemClass, (Map<Integer, Object>) m));
+        } else {
+            col.add(raw);
+        }
             }
             return col;
         }
@@ -428,8 +445,15 @@ public class Binder {
         return null;
     }
 
+    // Documents are CompactMaps: flat slots for tags 0..15 and the discriminator, so the serializer
+    // walks them with a reusable iterator and no boxing; larger tags go to the map's overflow.
+    @SuppressWarnings("unchecked")
+    private static Map<Integer, Object> newDocumentMap() {
+        return (Map<Integer, Object>) (Map<?, ?>) new CompactMap();
+    }
+
     public BinaryDocument unbind(Object o) {
-        Map<Object, Object> rootDocument = new HashMap<>();
+        Map<Object, Object> rootDocument = new CompactMap();
         ArrayDeque<BinderContext> stack = new ArrayDeque<>();
         stack.addLast(new BinderContext(o, rootDocument, o.getClass()));
 
@@ -439,53 +463,53 @@ public class Binder {
             ClassSchema schema = getSchema(ctx.o.getClass());
 
             try {
-                for (FieldBinding binding : schema.bindings) {
-                    Object fieldValue = binding.handle.get(ctx.o);
-                    if (fieldValue == null) continue;
+        for (FieldBinding binding : schema.bindings) {
+            Object fieldValue = binding.handle.get(ctx.o);
+            if (fieldValue == null) continue;
 
-                    int tag = binding.tag;
-                    switch (binding.kind) {
-                        case PRIMITIVE -> currentDocument.put(tag, fieldValue);
-                        case ENUM -> currentDocument.put(tag, fieldValue.toString());
-                        case TYPE -> {
-                            Map<Integer, Object> nested = new LinkedHashMap<>();
-                            String className = classNameMode == ClassNameMode.SIMPLE_NAME
-                                    ? fieldValue.getClass().getSimpleName()
-                                    : fieldValue.getClass().getName();
-                            currentDocument.put(binding.discriminator, className);
-                            currentDocument.put(tag, nested);
-                            stack.addLast(new BinderContext(fieldValue, nested, fieldValue.getClass()));
-                        }
-                        case COLLECTION -> {
-                            List<Object> serialized = new ArrayList<>();
-                            currentDocument.put(tag, serialized);
-                            for (Object item : (Collection<?>) fieldValue) {
-                                if (isPrimitiveOrWrapperOrString(item.getClass()) || item.getClass().isEnum()) {
-                                    serialized.add(item.toString());
-                                } else {
-                                    Map<Integer, Object> nested = new LinkedHashMap<>();
-                                    serialized.add(nested);
-                                    stack.addLast(new BinderContext(item, nested, item.getClass()));
-                                }
-                            }
-                        }
-                        case MAP -> {
-                            Map<Integer, Object> nestedMap = new LinkedHashMap<>();
-                            currentDocument.put(tag, nestedMap);
-                            Map<?, ?> sourceMap = (Map<?, ?>) fieldValue;
-                            sourceMap.forEach((k, v) -> nestedMap.put(((Number) k).intValue(), v));
-                        }
-                        case NESTED -> {
-                            Map<Integer, Object> nested = new LinkedHashMap<>();
-                            currentDocument.put(tag, nested);
-                            stack.addLast(new BinderContext(fieldValue, nested, fieldValue.getClass()));
+            int tag = binding.tag;
+            switch (binding.kind) {
+                case PRIMITIVE -> currentDocument.put(tag, fieldValue);
+                case ENUM -> currentDocument.put(tag, fieldValue.toString());
+                case TYPE -> {
+                    Map<Integer, Object> nested = newDocumentMap();
+                    String className = classNameMode == ClassNameMode.SIMPLE_NAME
+                            ? fieldValue.getClass().getSimpleName()
+                            : fieldValue.getClass().getName();
+                    currentDocument.put(binding.discriminator, className);
+                    currentDocument.put(tag, nested);
+                    stack.addLast(new BinderContext(fieldValue, nested, fieldValue.getClass()));
+                }
+                case COLLECTION -> {
+                    List<Object> serialized = new ArrayList<>();
+                    currentDocument.put(tag, serialized);
+                    for (Object item : (Collection<?>) fieldValue) {
+                        if (isPrimitiveOrWrapperOrString(item.getClass()) || item.getClass().isEnum()) {
+                            serialized.add(item.toString());
+                        } else {
+                            Map<Integer, Object> nested = newDocumentMap();
+                            serialized.add(nested);
+                            stack.addLast(new BinderContext(item, nested, item.getClass()));
                         }
                     }
                 }
+                case MAP -> {
+                    Map<Integer, Object> nestedMap = newDocumentMap();
+                    currentDocument.put(tag, nestedMap);
+                    Map<?, ?> sourceMap = (Map<?, ?>) fieldValue;
+                    sourceMap.forEach((k, v) -> nestedMap.put(((Number) k).intValue(), v));
+                }
+                case NESTED -> {
+                    Map<Integer, Object> nested = newDocumentMap();
+                    currentDocument.put(tag, nested);
+                    stack.addLast(new BinderContext(fieldValue, nested, fieldValue.getClass()));
+                }
+            }
+        }
             } catch (RuntimeException e) {
-                throw e;
+        throw e;
             } catch (Throwable e) {
-                throw new RuntimeException(e);
+        throw new RuntimeException(e);
             }
         }
 
@@ -495,12 +519,12 @@ public class Binder {
     private static Object instantiate(Class<?> clazz) {
         try {
             MethodHandle ctor = ctorCache.computeIfAbsent(clazz, c -> {
-                try {
-                    MethodHandles.Lookup lookup = MethodHandles.privateLookupIn(c, MethodHandles.lookup());
-                    return lookup.findConstructor(c, MethodType.methodType(void.class));
-                } catch (Exception e) {
-                    throw new RuntimeException(e);
-                }
+        try {
+            MethodHandles.Lookup lookup = MethodHandles.privateLookupIn(c, MethodHandles.lookup());
+            return lookup.findConstructor(c, MethodType.methodType(void.class));
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
             });
             return ctor.invoke();
         } catch (RuntimeException e) {
@@ -541,25 +565,25 @@ public class Binder {
 
         for (Field field : clazz.getDeclaredFields()) {
             if (field.isAnnotationPresent(Transient.class)) {
-                continue;
+        continue;
             }
             Tag tag = field.getAnnotation(Tag.class);
             if (tag == null) {
-                throw new IllegalArgumentException(
-                        "Field '" + field.getName() + "' in class '" + clazz.getName()
-                                + "' must be annotated with @Tag or @Transient");
+        throw new IllegalArgumentException(
+                "Field '" + field.getName() + "' in class '" + clazz.getName()
+                        + "' must be annotated with @Tag or @Transient");
             }
             if (tag.value() < 0) {
-                throw new IllegalArgumentException(
-                        "Tag value for field '" + field.getName() + "' in class '" + clazz.getName()
-                                + "' must be non-negative, got " + tag.value());
+        throw new IllegalArgumentException(
+                "Tag value for field '" + field.getName() + "' in class '" + clazz.getName()
+                        + "' must be non-negative, got " + tag.value());
             }
 
             VarHandle handle;
             try {
-                handle = lookup.findVarHandle(clazz, field.getName(), field.getType());
+        handle = lookup.findVarHandle(clazz, field.getName(), field.getType());
             } catch (NoSuchFieldException | IllegalAccessException e) {
-                throw new RuntimeException(e);
+        throw new RuntimeException(e);
             }
 
             FieldKind kind;
@@ -567,18 +591,18 @@ public class Binder {
             Class<?> fieldType = field.getType();
 
             if (isPrimitiveOrWrapperOrString(fieldType)) {
-                kind = FieldKind.PRIMITIVE;
+        kind = FieldKind.PRIMITIVE;
             } else if (fieldType.isEnum()) {
-                kind = FieldKind.ENUM;
+        kind = FieldKind.ENUM;
             } else if (Collection.class.isAssignableFrom(fieldType)) {
-                kind = FieldKind.COLLECTION;
+        kind = FieldKind.COLLECTION;
             } else if (Map.class.isAssignableFrom(fieldType)) {
-                kind = FieldKind.MAP;
+        kind = FieldKind.MAP;
             } else if (field.isAnnotationPresent(Type.class)) {
-                kind = FieldKind.TYPE;
-                bsonDiscriminator = field.getAnnotation(Type.class).discriminator();
+        kind = FieldKind.TYPE;
+        bsonDiscriminator = field.getAnnotation(Type.class).discriminator();
             } else {
-                kind = FieldKind.NESTED;
+        kind = FieldKind.NESTED;
             }
 
             Constraints constraints = buildConstraints(field);
@@ -587,7 +611,7 @@ public class Binder {
             bindingList.add(binding);
 
             if (tag.value() > maxTag) {
-                maxTag = tag.value();
+        maxTag = tag.value();
             }
         }
 
@@ -595,8 +619,8 @@ public class Binder {
         FieldBinding[] tagLookup = new FieldBinding[maxTag + 1];
         for (FieldBinding binding : bindingList) {
             if (tagLookup[binding.tag] != null) {
-                throw new IllegalArgumentException(
-                        "Duplicate tag value " + binding.tag + " in class '" + clazz.getName() + "'");
+        throw new IllegalArgumentException(
+                "Duplicate tag value " + binding.tag + " in class '" + clazz.getName() + "'");
             }
             tagLookup[binding.tag] = binding;
         }
@@ -606,37 +630,37 @@ public class Binder {
 
     public static boolean isPrimitiveOrWrapperOrString(Class<?> type) {
         return type.isPrimitive()
-                || type == Instant.class
-                || type == LocalDateTime.class
-                || type == BigDecimal.class
-                || type == Boolean.class
-                || type == Byte.class
-                || type == Short.class
-                || type == Integer.class
-                || type == Long.class
-                || type == Float.class
-                || type == Double.class
-                || type == Character.class
-                || type == String.class
-                || type == byte[].class
-                || type == short[].class
-                || type == int[].class
-                || type == long[].class
-                || type == float[].class
-                || type == double[].class
-                || type == boolean[].class
-                || type == char[].class
-                || type == Boolean[].class
-                || type == Byte[].class
-                || type == Short[].class
-                || type == Integer[].class
-                || type == Long[].class
-                || type == Float[].class
-                || type == Double[].class
-                || type == Character[].class
-                || type == String[].class
-                || type == Enum.class
-                || type == ByteBuffer.class;
+        || type == Instant.class
+        || type == LocalDateTime.class
+        || type == BigDecimal.class
+        || type == Boolean.class
+        || type == Byte.class
+        || type == Short.class
+        || type == Integer.class
+        || type == Long.class
+        || type == Float.class
+        || type == Double.class
+        || type == Character.class
+        || type == String.class
+        || type == byte[].class
+        || type == short[].class
+        || type == int[].class
+        || type == long[].class
+        || type == float[].class
+        || type == double[].class
+        || type == boolean[].class
+        || type == char[].class
+        || type == Boolean[].class
+        || type == Byte[].class
+        || type == Short[].class
+        || type == Integer[].class
+        || type == Long[].class
+        || type == Float[].class
+        || type == Double[].class
+        || type == Character[].class
+        || type == String[].class
+        || type == Enum.class
+        || type == ByteBuffer.class;
     }
 
     private static Object coerceNumeric(Class<?> targetType, Object value) {

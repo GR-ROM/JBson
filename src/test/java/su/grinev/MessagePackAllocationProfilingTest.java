@@ -5,7 +5,6 @@ import org.junit.jupiter.api.Test;
 import su.grinev.messagepack.*;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import su.grinev.pool.DynamicByteBuffer;
-import su.grinev.pool.FastPool;
 import su.grinev.pool.PoolFactory;
 
 import java.nio.ByteBuffer;
@@ -58,13 +57,9 @@ public class MessagePackAllocationProfilingTest {
                 .setBlocking(true)
                 .build();
 
-        FastPool<WriterContext> writerCtxPool = poolFactory.getPool(WriterContext::new);
-        FastPool<ArrayDeque<WriterContext>> writerStackPool = poolFactory.getPool(() -> new ArrayDeque<>(16));
-        FastPool<ReaderContext> readerCtxPool = poolFactory.getPool(ReaderContext::new);
-        FastPool<ArrayDeque<ReaderContext>> readerStackPool = poolFactory.getPool(() -> new ArrayDeque<>(64));
 
-        writer = new MessagePackWriter(writerCtxPool, writerStackPool);
-        reader = new MessagePackReader(readerCtxPool, readerStackPool, true, true);
+        writer = new MessagePackWriter();
+        reader = new MessagePackReader(true, true);
     }
 
     /**

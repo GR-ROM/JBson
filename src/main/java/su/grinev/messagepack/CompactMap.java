@@ -3,9 +3,14 @@ package su.grinev.messagepack;
 import java.util.*;
 
 /**
- * Zero-allocation map for small integer keys (0..15) plus a discriminator slot (1488).
- * Uses flat arrays — no HashMap$Node allocation on put/get.
- * Implements Map<Object, Object> for compatibility with BinaryDocument.
+ * Zero-allocation map for small integer keys (0..15) plus a discriminator slot (1488) — the shape
+ * of a tagged protocol document. Uses flat arrays: no HashMap$Node allocation on put/get, and an
+ * {@code int}-keyed {@link #putInt(int, Object)} that never boxes.
+ *
+ * <p>Any other key (an int tag of 16 or more, a negative int, a string) goes to a lazily allocated
+ * overflow {@link HashMap}, so the map is general; only the common case is free. The overflow map
+ * is kept (emptied, not dropped) across {@link #clear()} so a pooled instance stays allocation-free
+ * once it has seen such a key. Implements Map<Object, Object> for compatibility with BinaryDocument.
  */
 public final class CompactMap implements Map<Object, Object> {
 
@@ -17,47 +22,76 @@ public final class CompactMap implements Map<Object, Object> {
     private long presentBits;
     private Object discriminatorValue;
     private boolean discriminatorPresent;
+    private HashMap<Object, Object> overflow;   // null until a key outside the fast slots shows up
     private int size;
+
+    /**
+     * {@code int}-keyed put: the fast slots without boxing; other ints go to the overflow map.
+     * Named rather than overloaded because {@code put(int, Object)} vs {@code put(Object, Object)} is
+     * ambiguous for a call like {@code put(0, 1)} once boxing is in play.
+     */
+    public Object putInt(int key, Object value) {
+        if (key >= 0 && key < SMALL_LIMIT) {
+            Object old = values[key];
+            values[key] = value;
+            long bit = 1L << key;
+            if ((presentBits & bit) == 0) {
+                presentBits |= bit;
+                size++;
+            }
+            return old;
+        }
+        if (key == DISCRIMINATOR_KEY) {
+            Object old = discriminatorValue;
+            discriminatorValue = value;
+            if (!discriminatorPresent) {
+                discriminatorPresent = true;
+                size++;
+            }
+            return old;
+        }
+        return putOverflow(key, value);
+    }
 
     @Override
     public Object put(Object key, Object value) {
         if (key instanceof Integer k) {
-            int i = k;
-            if (i >= 0 && i < SMALL_LIMIT) {
-                Object old = values[i];
-                values[i] = value;
-                long bit = 1L << i;
-                if ((presentBits & bit) == 0) {
-                    presentBits |= bit;
-                    size++;
-                }
-                return old;
-            }
-            if (i == DISCRIMINATOR_KEY) {
-                Object old = discriminatorValue;
-                discriminatorValue = value;
-                if (!discriminatorPresent) {
-                    discriminatorPresent = true;
-                    size++;
-                }
-                return old;
-            }
+            return putInt(k.intValue(), value);
         }
-        throw new UnsupportedOperationException("Unsupported key: " + key + " (" + (key == null ? "null" : key.getClass().getName()) + ")");
+        if (key == null) {
+            throw new UnsupportedOperationException("null key");
+        }
+        return putOverflow(key, value);
+    }
+
+    private Object putOverflow(Object key, Object value) {
+        if (overflow == null) {
+            overflow = new HashMap<>();
+        }
+        int before = overflow.size();
+        Object old = overflow.put(key, value);
+        if (overflow.size() != before) {
+            size++;
+        }
+        return old;
+    }
+
+    public Object get(int key) {
+        if (key >= 0 && key < SMALL_LIMIT) {
+            return (presentBits & (1L << key)) != 0 ? values[key] : null;
+        }
+        if (key == DISCRIMINATOR_KEY) {
+            return discriminatorPresent ? discriminatorValue : null;
+        }
+        return overflow == null ? null : overflow.get(key);
     }
 
     @Override
     public Object get(Object key) {
         if (key instanceof Integer k) {
-            int i = k;
-            if (i >= 0 && i < SMALL_LIMIT) {
-                return (presentBits & (1L << i)) != 0 ? values[i] : null;
-            }
-            if (i == DISCRIMINATOR_KEY) {
-                return discriminatorPresent ? discriminatorValue : null;
-            }
+            return get(k.intValue());
         }
-        return null;
+        return overflow == null || key == null ? null : overflow.get(key);
     }
 
     @Override
@@ -67,7 +101,7 @@ public final class CompactMap implements Map<Object, Object> {
             if (i >= 0 && i < SMALL_LIMIT) return (presentBits & (1L << i)) != 0;
             if (i == DISCRIMINATOR_KEY) return discriminatorPresent;
         }
-        return false;
+        return overflow != null && key != null && overflow.containsKey(key);
     }
 
     @Override
@@ -85,15 +119,22 @@ public final class CompactMap implements Map<Object, Object> {
                 }
                 return null;
             }
-            if (i == DISCRIMINATOR_KEY && discriminatorPresent) {
-                Object old = discriminatorValue;
-                discriminatorValue = null;
-                discriminatorPresent = false;
-                size--;
-                return old;
+            if (i == DISCRIMINATOR_KEY) {
+                if (discriminatorPresent) {
+                    Object old = discriminatorValue;
+                    discriminatorValue = null;
+                    discriminatorPresent = false;
+                    size--;
+                    return old;
+                }
+                return null;
             }
         }
-        return null;
+        if (overflow == null || key == null || !overflow.containsKey(key)) {
+            return null;
+        }
+        size--;
+        return overflow.remove(key);
     }
 
     @Override
@@ -109,6 +150,9 @@ public final class CompactMap implements Map<Object, Object> {
         }
         discriminatorValue = null;
         discriminatorPresent = false;
+        if (overflow != null && !overflow.isEmpty()) {
+            overflow.clear();
+        }
         size = 0;
     }
 
@@ -122,6 +166,10 @@ public final class CompactMap implements Map<Object, Object> {
         return size == 0;
     }
 
+    private boolean hasOverflow() {
+        return overflow != null && !overflow.isEmpty();
+    }
+
     @Override
     public boolean containsValue(Object value) {
         long bits = presentBits;
@@ -130,7 +178,8 @@ public final class CompactMap implements Map<Object, Object> {
             if (Objects.equals(values[i], value)) return true;
             bits &= bits - 1;
         }
-        return discriminatorPresent && Objects.equals(discriminatorValue, value);
+        if (discriminatorPresent && Objects.equals(discriminatorValue, value)) return true;
+        return hasOverflow() && overflow.containsValue(value);
     }
 
     @Override
@@ -149,6 +198,7 @@ public final class CompactMap implements Map<Object, Object> {
             bits &= bits - 1;
         }
         if (discriminatorPresent) keys.add(DISCRIMINATOR_KEY);
+        if (hasOverflow()) keys.addAll(overflow.keySet());
         return keys;
     }
 
@@ -161,12 +211,13 @@ public final class CompactMap implements Map<Object, Object> {
             bits &= bits - 1;
         }
         if (discriminatorPresent) vals.add(discriminatorValue);
+        if (hasOverflow()) vals.addAll(overflow.values());
         return vals;
     }
 
     /**
-     * Returns a reusable iterator over entries. Zero allocation.
-     * NOT thread-safe — single consumer only.
+     * Returns a reusable iterator over entries. Zero allocation unless the map has overflow keys
+     * (then one HashMap iterator for them). NOT thread-safe — single consumer only.
      */
     public EntryIterator entryIterator() {
         reusableIterator.reset();
@@ -188,6 +239,11 @@ public final class CompactMap implements Map<Object, Object> {
         if (discriminatorPresent) {
             entries.add(new AbstractMap.SimpleImmutableEntry<>(DISCRIMINATOR_KEY, discriminatorValue));
         }
+        if (hasOverflow()) {
+            for (Entry<Object, Object> e : overflow.entrySet()) {
+                entries.add(new AbstractMap.SimpleImmutableEntry<>(e.getKey(), e.getValue()));
+            }
+        }
         return entries;
     }
 
@@ -204,18 +260,21 @@ public final class CompactMap implements Map<Object, Object> {
         @Override public Object setValue(Object value) { throw new UnsupportedOperationException(); }
     }
 
-    final class EntryIterator implements Iterator<Entry<Object, Object>> {
+    public final class EntryIterator implements Iterator<Entry<Object, Object>> {
         private long remainingBits;
         private boolean discriminatorRemaining;
+        private Iterator<Entry<Object, Object>> overflowIterator;
 
         void reset() {
             remainingBits = presentBits;
             discriminatorRemaining = discriminatorPresent;
+            overflowIterator = hasOverflow() ? overflow.entrySet().iterator() : null;
         }
 
         @Override
         public boolean hasNext() {
-            return remainingBits != 0 || discriminatorRemaining;
+            return remainingBits != 0 || discriminatorRemaining
+                    || (overflowIterator != null && overflowIterator.hasNext());
         }
 
         @Override
@@ -232,6 +291,9 @@ public final class CompactMap implements Map<Object, Object> {
                 reusableEntry.key = DISCRIMINATOR_KEY;
                 reusableEntry.value = discriminatorValue;
                 return reusableEntry;
+            }
+            if (overflowIterator != null && overflowIterator.hasNext()) {
+                return overflowIterator.next();
             }
             throw new NoSuchElementException();
         }
@@ -252,6 +314,14 @@ public final class CompactMap implements Map<Object, Object> {
         if (discriminatorPresent) {
             if (!first) sb.append(", ");
             sb.append(DISCRIMINATOR_KEY).append("=").append(discriminatorValue);
+            first = false;
+        }
+        if (hasOverflow()) {
+            for (Entry<Object, Object> e : overflow.entrySet()) {
+                if (!first) sb.append(", ");
+                sb.append(e.getKey()).append("=").append(e.getValue());
+                first = false;
+            }
         }
         sb.append("}");
         return sb.toString();
