@@ -50,10 +50,11 @@ import java.util.concurrent.atomic.LongAdder;
  *
  * <p>Levels, via {@code -Djbson.leakDetection=<level>}:
  * <ul>
- *   <li>{@code disabled} — no tracking at all; the checks fold away to a constant.</li>
- *   <li>{@code simple} (default) — sample 1/128 and report <i>that</i> a pool is leaking, without
- *       capturing a stack. This is the level that can stay on in production: see the allocation note
- *       below for why the stack is what makes the difference.</li>
+ *   <li>{@code disabled} (default) — no tracking at all; the checks fold away to a constant.</li>
+ *   <li>{@code simple} — sample 1/128 and report <i>that</i> a pool is leaking, without capturing a
+ *       stack. Cheap enough to switch on in production for a while, but not free: the tracker is a
+ *       {@code PhantomReference} in a concurrent set, and at a few hundred thousand checkouts a
+ *       second that is hundreds of megabytes an hour on a heap sized in tens of megabytes.</li>
  *   <li>{@code advanced} — sample 1/128, capture the acquisition stack, and record
  *       {@link RefCounted#touch} hints, so the report says <i>where</i> the buffer was taken and what
  *       last handled it. Turn this on once SIMPLE has told you a pool is leaking.</li>
@@ -289,13 +290,16 @@ public final class LeakDetector {
 
     private static Level parseLevel(String value) {
         if (value == null || value.isBlank()) {
-            return Level.SIMPLE;
+            // Off unless asked for. SIMPLE was the default through 0.9.0-39 and cost a production node
+            // 518 MB of trackers per three minutes at 20 clients — a third of its ZGC cycles
+            // (MyVPN docs/benchmarks/benchmark-2026-08-29-87-jbson39-ab-readv-and-gc-storm.md).
+            return Level.DISABLED;
         }
         try {
             return Level.valueOf(value.trim().toUpperCase());
         } catch (IllegalArgumentException unknown) {
-            log.warn("Unknown jbson.leakDetection level '{}', falling back to SIMPLE", value);
-            return Level.SIMPLE;
+            log.warn("Unknown jbson.leakDetection level '{}', falling back to DISABLED", value);
+            return Level.DISABLED;
         }
     }
 

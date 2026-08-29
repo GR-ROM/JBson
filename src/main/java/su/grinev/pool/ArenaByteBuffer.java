@@ -18,10 +18,12 @@ import java.nio.ByteOrder;
  *
  * Release mode (see {@link Release}):
  * <ul>
- *   <li><b>AUTO</b> (default) — {@code Arena.ofAuto()}: the GC frees the native segment when the buffer
- *       becomes unreachable, exactly like a direct {@link ByteBuffer}'s cleaner. {@link #destroy()} is a
- *       no-op. Safe by construction — a dropped buffer never leaks. This is also the only mode that does
- *       not require the FFM {@code Arena.of{Shared,Confined}} API, so it is the path a Java 21 build uses.</li>
+ *   <li><b>AUTO</b> (default) — a direct {@link ByteBuffer}, freed by the GC when the buffer becomes
+ *       unreachable; the segment is a view of it. {@link #destroy()} is a no-op. Safe by construction —
+ *       a dropped buffer never leaks. Deliberately <i>not</i> an {@code Arena.ofAuto()} segment: a
+ *       session-backed buffer makes every {@code read/write(ByteBuffer[])} allocate (see
+ *       {@code allocateAuto}). This is also the only mode that does not require the FFM
+ *       {@code Arena.of{Shared,Confined}} API, so it is the path a Java 21 build uses.</li>
  *   <li><b>MANUAL</b> — {@code Arena.ofShared()}: {@link #destroy()} frees the segment deterministically.
  *       A {@link Cleaner} closes the arena if the buffer is dropped without {@code destroy()} (ofShared
  *       memory is otherwise never reclaimed by the GC). Use only when you take explicit ownership and want
@@ -93,21 +95,34 @@ public class ArenaByteBuffer implements Disposable, RefCounted {
 
     public ArenaByteBuffer(int capacity, Release release) {
         this.release = release;
-        this.arena = newArena();
-        this.segment = arena.allocate(capacity);
-        this.buffer = segment.asByteBuffer().order(ByteOrder.LITTLE_ENDIAN);
         if (release == Release.MANUAL) {
+            this.arena = Arena.ofShared();
+            this.segment = arena.allocate(capacity);
+            this.buffer = segment.asByteBuffer().order(ByteOrder.LITTLE_ENDIAN);
             this.holder = new ArenaHolder();
             this.holder.arena = arena;
             this.cleanable = CLEANER.register(this, holder);
         } else {
+            this.arena = null;
+            this.buffer = allocateAuto(capacity).order(ByteOrder.LITTLE_ENDIAN);
+            this.segment = MemorySegment.ofBuffer(buffer);
             this.holder = null;
             this.cleanable = null;
         }
     }
 
-    private Arena newArena() {
-        return release == Release.MANUAL ? Arena.ofShared() : Arena.ofAuto();
+    /**
+     * AUTO memory comes from {@link ByteBuffer#allocateDirect}, not from an arena, and the segment is
+     * derived from the buffer rather than the other way round. The difference is invisible to every
+     * caller and decisive for the channel: {@code SocketChannel.read/write(ByteBuffer[])} acquires the
+     * memory session of every buffer that has one and allocates a releaser per buffer per call to let
+     * go of it again — 40 bytes a buffer, 640 a gather-write of sixteen, and on a node that is ~0.8 GB
+     * per three minutes, the single largest allocation left once its own were gone. A buffer with no
+     * session is the case the JDK special-cases to nothing. The GC still frees the memory, and it is
+     * still counted against {@code -XX:MaxDirectMemorySize}, exactly as an auto arena's was.
+     */
+    private static ByteBuffer allocateAuto(int capacity) {
+        return ByteBuffer.allocateDirect(capacity);
     }
 
     /** Capacity of the preallocated native segment in bytes. Writes up to this size never reallocate. */
@@ -156,22 +171,28 @@ public class ArenaByteBuffer implements Disposable, RefCounted {
         }
         int used = buffer.position();
         int newCapacity = Math.max(capacity() * 2, used + additionalCapacity);
-
-        Arena newArena = newArena();
-        MemorySegment newSegment = newArena.allocate(newCapacity);
-        MemorySegment.copy(segment, 0, newSegment, 0, used);
-
-        Arena oldArena = arena;
-        this.arena = newArena;
-        this.segment = newSegment;
         // Preserve the caller's byte order: msgpack writes BIG_ENDIAN, BSON LITTLE_ENDIAN —
         // hardcoding LE here would silently flip the order of a big-endian stream mid-write.
-        this.buffer = newSegment.asByteBuffer().order(buffer.order());
-        this.buffer.position(used);
+        ByteOrder order = buffer.order();
+
         if (release == Release.MANUAL) {
+            Arena newArena = Arena.ofShared();
+            MemorySegment newSegment = newArena.allocate(newCapacity);
+            MemorySegment.copy(segment, 0, newSegment, 0, used);
+            Arena oldArena = arena;
+            this.arena = newArena;
+            this.segment = newSegment;
+            this.buffer = newSegment.asByteBuffer().order(order);
             holder.arena = newArena;   // the cleaner now tracks the new arena
-            oldArena.close();          // free the old segment now; AUTO leaves it to the GC
+            oldArena.close();          // free the old segment now
+        } else {
+            ByteBuffer newBuffer = allocateAuto(newCapacity).order(order);
+            MemorySegment newSegment = MemorySegment.ofBuffer(newBuffer);
+            MemorySegment.copy(segment, 0, newSegment, 0, used);
+            this.segment = newSegment;
+            this.buffer = newBuffer;   // the old one is left to the GC
         }
+        this.buffer.position(used);
     }
 
     /**

@@ -4,7 +4,12 @@ import org.junit.jupiter.api.Test;
 import su.grinev.pool.ArenaByteBuffer;
 import su.grinev.pool.DynamicByteBuffer;
 
+import java.lang.management.ManagementFactory;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
+import java.nio.channels.ServerSocketChannel;
+import java.nio.channels.SocketChannel;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -211,5 +216,64 @@ public class ArenaByteBufferTest {
         b.putInt(0, 555);
         assertEquals(555, view.getInt(0), "the view still aliases the buffer's memory");
         b.destroy();
+    }
+
+    /**
+     * The property the AUTO allocation strategy exists for: a gather-write of pooled buffers must not
+     * allocate. {@code SocketChannel.write(ByteBuffer[])} acquires the memory session of every buffer
+     * that has one and builds a releaser per buffer to let go of it — 40 bytes a buffer, on a data
+     * plane hundreds of megabytes a minute — and skips all of it for a buffer with no session. An
+     * arena-backed buffer has a session; a direct buffer does not. Measured per call with the thread's
+     * own allocation counter, so a regression to {@code Arena.ofAuto()} fails here, not on a node.
+     */
+    @Test
+    void gatherWriteOfAutoBuffersAllocatesNothing() throws Exception {
+        try (ServerSocketChannel server = ServerSocketChannel.open()) {
+            server.bind(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0));
+            try (SocketChannel client = SocketChannel.open(server.getLocalAddress());
+                 SocketChannel accepted = server.accept()) {
+                client.configureBlocking(false);
+                Thread drain = new Thread(() -> {
+                    ByteBuffer sink = ByteBuffer.allocateDirect(1 << 20);
+                    try {
+                        while (accepted.read(sink) >= 0) {
+                            sink.clear();
+                        }
+                    } catch (Exception ignored) {
+                        // the channel closes under us at the end of the test
+                    }
+                });
+                drain.setDaemon(true);
+                drain.start();
+
+                ArenaByteBuffer[] owners = new ArenaByteBuffer[16];
+                ByteBuffer[] bufs = new ByteBuffer[owners.length];
+                for (int i = 0; i < owners.length; i++) {
+                    owners[i] = new ArenaByteBuffer(1500);
+                    bufs[i] = owners[i].getBuffer();
+                }
+                com.sun.management.ThreadMXBean threads =
+                        (com.sun.management.ThreadMXBean) ManagementFactory.getThreadMXBean();
+                long tid = Thread.currentThread().threadId();
+                int rounds = 20_000;
+                for (int r = 0; r < 2_000; r++) {          // warm the write path up before counting
+                    writeSmall(client, bufs);
+                }
+                long before = threads.getThreadAllocatedBytes(tid);
+                for (int r = 0; r < rounds; r++) {
+                    writeSmall(client, bufs);
+                }
+                double perWrite = (threads.getThreadAllocatedBytes(tid) - before) / (double) rounds;
+                assertTrue(perWrite < 8.0, "write(ByteBuffer[]) of 16 pooled buffers allocated "
+                        + perWrite + " B per call; a session-backed buffer costs 40 B each");
+            }
+        }
+    }
+
+    private static void writeSmall(SocketChannel channel, ByteBuffer[] bufs) throws java.io.IOException {
+        for (ByteBuffer b : bufs) {
+            b.clear().limit(64);                            // 16 x 64 B: the socket never fills
+        }
+        channel.write(bufs);
     }
 }

@@ -155,8 +155,8 @@ test {
     jvmArgs '--enable-native-access=ALL-UNNAMED'
     // Tests run PARANOID: every pooled checkout is watched, so a test that drops a buffer says so
     // instead of leaving it for a load run to notice. It costs ~2.3 kB of garbage per checkout, which
-    // is irrelevant to a test and unthinkable in production — production runs SIMPLE (the library
-    // default), where a checkout costs 0.6 bytes. Override for a run with -Pleak=simple|advanced|disabled.
+    // is irrelevant to a test and unthinkable in production — production leaves the property unset and
+    // gets DISABLED, the library default since 0.9.0-40. Override for a run with -Pleak=simple|advanced|disabled.
     // The level is read once at class-init, which is also why the allocation budget test reports the
     // level it measured under rather than trying to vary it.
     systemProperty 'jbson.leakDetection', project.findProperty('leak') ?: 'paranoid'
